@@ -1,6 +1,7 @@
 #include "UtilitiesRuntime.h"
 #include <shlobj_core.h>
-
+#include <codecvt>
+#include <locale>
 namespace beast = boost::beast;         
 namespace http = beast::http;           
 namespace websocket = beast::websocket; 
@@ -12,14 +13,16 @@ string UtilitiesRuntime::Path_to_KeyFile_ = "";
 string UtilitiesRuntime::MacBuffer_ = "\xff\xff\xff\xff\xff\xff";
 HANDLE UtilitiesRuntime::monitorOffEvent = NULL;
 HANDLE UtilitiesRuntime::monitorOnEvent = NULL;
-
+wstring UtilitiesRuntime::widen(string& str) const
+{
+    return wstring_convert<codecvt_utf8<wchar_t>>().from_bytes(str);
+}
 UtilitiesRuntime::UtilitiesRuntime(bool& result) 
 {
     result = init();
 }
 UtilitiesRuntime::~UtilitiesRuntime()
 {
-    WSACleanup();
 }
 string UtilitiesRuntime::narrow(wstring sInput) const 
 {
@@ -39,14 +42,10 @@ string UtilitiesRuntime::narrow(wstring sInput) const
 }
 bool UtilitiesRuntime::init()
 {
-    if (!initWOL())
-    {
-        Last_error_ = "Failed to init Wake-On-Lan related calls!";
-        return false;
-    }
+    initWOL();
     if (!createWakeupEvent())
     {
-        Last_error_ = "Failed to create wakeup events!";
+        Last_error_ = "Failed to create wakeup events! Something went wrong!";
         return false;
     }
     HMODULE hDLL = LoadLibrary(L"Shlwapi.dll");
@@ -87,11 +86,14 @@ bool UtilitiesRuntime::init()
             Handshake_ = narrow(HANDSHAKE_PAIRED);
         saveKeyToFile();
     }
+    initHandshake();
     return true;
 }
 wstring UtilitiesRuntime::getLastError() const
 {
-    return wstring(Last_error_.begin(), Last_error_.end());
+    wstring ret = widen(Last_error_);
+    Last_error_ = "";
+    return ret;
 }
 bool UtilitiesRuntime::loadKeyFromFile()
 {
@@ -157,24 +159,23 @@ bool UtilitiesRuntime::setupSessionKey()
         ws.close(websocket::close_code::normal);
         return true;
     }
-    catch (const exception& const e)
+    catch (const exception& e)
     {
         Last_error_ = SETUP_SESSION_KEY_ERROR;
-        Last_error_ += e.what();
+        Last_error_.append(e.what());
         return false;
     }
 }
+
 bool UtilitiesRuntime::turnOffDisplay() const
 {
     string host = Host_;
-    string handshake = Handshake_;
     try
     {
         time_t origtim = time(0);
         net::io_context ioc;
 
-        size_t ckf = handshake.find(Ck_);
-        handshake.replace(ckf, Ck_.length(), Key_);
+        
         tcp::resolver resolver{ ioc };
         websocket::stream<tcp::socket> ws{ ioc };
         auto const results = resolver.resolve(host, SERVICE_PORT);
@@ -194,17 +195,17 @@ bool UtilitiesRuntime::turnOffDisplay() const
         ESCAPE_TOO_MUCH_TIME(origtim, 10);
         beast::flat_buffer buffer;
 
-        ws.write(net::buffer(std::string(handshake)));
+        ws.write(net::buffer(std::string(Handshake_)));
         ws.read(buffer); // read the response
         ws.write(net::buffer(std::string(Poweroffmess_)));
         ws.read(buffer); // read the response
         ws.close(websocket::close_code::normal);
         return true;
     }
-    catch (exception const& e)
+    catch (const exception& e)
     {
         Last_error_ = TURN_OFF_DISPLAY_ERROR;
-        Last_error_ += e.what();
+        Last_error_.append(e.what());
         return false;
     }
 }
@@ -216,10 +217,19 @@ bool UtilitiesRuntime::createWakeupEvent() const
 
     return monitorOnEvent != NULL && monitorOffEvent != NULL;
 }
-bool UtilitiesRuntime::initWOL()
+void UtilitiesRuntime::initWOL()
 {
     for (int i = 0; i < 16; ++i)
         MacBuffer_.append(OLED_MAC_ADDRESS);
+}
+void UtilitiesRuntime::initHandshake()
+{
+    size_t ckf = Handshake_.find(Ck_);
+    Handshake_.replace(ckf, Ck_.length(), Key_);
+}
+
+bool UtilitiesRuntime::turnOnDisplay() const
+{
     WSADATA wsaData;
     int iResult;
 
@@ -227,12 +237,8 @@ bool UtilitiesRuntime::initWOL()
     if (iResult != NO_ERROR) {
         return false;
     }
-}
-bool UtilitiesRuntime::turnOnDisplay() const
-{
     const char* SendBuf = MacBuffer_.c_str();
     int BufLen = 102;
-    int iResult;
 
     sockaddr_in RecvAddr;
     SOCKET SendSocket = INVALID_SOCKET;

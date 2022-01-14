@@ -2,6 +2,7 @@
 #include <strsafe.h>
 #include "UtilitiesRuntime.h"
 #include "Messages.h"
+
 #pragma comment(lib, "advapi32.lib")
 
 #define SVCNAME TEXT("OledAwake")
@@ -376,31 +377,33 @@ DWORD WINAPI SvcCtrlHandler(DWORD dwCtrl, DWORD dwEventType, LPVOID lpEventData,
 }
 VOID svcReportEvent(wstring error_message)
 {
+    size_t sz = error_message.size() + 1;
     HANDLE hEventSource;
     LPCTSTR lpszStrings[2];
-    TCHAR Buffer[200];
+    TCHAR *Buffer = new TCHAR[sz];
 
     hEventSource = RegisterEventSource(NULL, SVCNAME);
 
     if (NULL != hEventSource)
     {
-        StringCchPrintf(Buffer, 200, TEXT("%s"), error_message.c_str());
+        memcpy(Buffer, error_message.c_str(), sz);
 
         lpszStrings[0] = SVCNAME;
         lpszStrings[1] = Buffer;
 
         ReportEvent(hEventSource,        // event log handle
-            EVENTLOG_ERROR_TYPE, // event type
+            EVENTLOG_WARNING_TYPE, // event type
             0,                   // event category
-            SVC_ERROR,           // event identifier
+            OLED_AWAKE_WARNING,           // event identifier
             NULL,                // no security identifier
             2,                   // size of lpszStrings array
             0,                   // no binary data
             lpszStrings,         // array of strings
             NULL);               // no binary data
-
+        
         DeregisterEventSource(hEventSource);
     }
+    delete[] Buffer;
 }
 
 

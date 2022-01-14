@@ -1,5 +1,3 @@
-#pragma once
-// The following are message definitions.
 //
 //  Values are 32 bit values laid out as follows:
 //
@@ -53,5 +51,12 @@
 //
 #define SVC_ERROR                        ((DWORD)0xC0020001L)
 
- // A message file must end with a period on its own line
- // followed by a blank line.
+//
+// MessageId: OLED_AWAKE_WARNING
+//
+// MessageText:
+//
+// %1 has issued a warning. The error message is: %2.
+//
+#define OLED_AWAKE_WARNING               ((DWORD)0x80020002L)
+

@@ -39,10 +39,11 @@ class UtilitiesRuntime
 public:
     UtilitiesRuntime(bool &result);
     ~UtilitiesRuntime();
-    string narrow(wstring sInput) const;
+    [[nodiscard]] string narrow(wstring sInput) const;
     bool turnOffDisplay() const;
-    wstring getLastError() const;
+    [[nodiscard]] wstring getLastError() const;
     bool turnOnDisplay() const;
+    [[nodiscard]] wstring widen(string& str) const;
 
 private:
 
@@ -50,8 +51,8 @@ private:
     bool loadKeyFromFile();
     bool setupSessionKey();
     bool createWakeupEvent() const;
-    bool initWOL();
-
+    void initWOL();
+    void initHandshake();
     void saveKeyToFile() const;
 
     static HANDLE monitorOnEvent;

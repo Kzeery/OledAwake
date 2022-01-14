@@ -6,6 +6,9 @@ MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "OledAwake", "OledAwake.vcxproj", "{828F60E6-FDC1-4C5E-82B1-C0AA5C4F9B6F}"
 EndProject
 Project("{930C7802-8A8C-48F9-8165-68863BCCD9DD}") = "OledAwakeInstall", "Installer\OledAwakeInstall.wixproj", "{0DD74C39-84F8-4E70-9AAB-4D955978FFF3}"
+	ProjectSection(ProjectDependencies) = postProject
+		{828F60E6-FDC1-4C5E-82B1-C0AA5C4F9B6F} = {828F60E6-FDC1-4C5E-82B1-C0AA5C4F9B6F}
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
