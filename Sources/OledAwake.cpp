@@ -2,6 +2,7 @@
 #include <strsafe.h>
 #include "UtilitiesRuntime.h"
 #include "Messages.h"
+#include <vector>
 
 #pragma comment(lib, "advapi32.lib")
 
@@ -19,7 +20,6 @@ VOID ReportSvcStatus(DWORD, DWORD, DWORD);
 VOID SvcInit(DWORD, LPTSTR*);
 VOID SvcReportEvent(LPTSTR);
 VOID svcReportEvent(wstring);
-
 
 //
 // Purpose: 
@@ -41,7 +41,7 @@ int __cdecl _tmain(int argc, TCHAR* argv[])
         SvcInstall();
         return 0;
     }
-
+    std::this_thread::sleep_for(std::chrono::seconds(10));
     // TO_DO: Add any additional services for the process to this table.
     SERVICE_TABLE_ENTRY DispatchTable[] =
     {
@@ -138,7 +138,6 @@ VOID SvcInstall()
 VOID WINAPI SvcMain(DWORD dwArgc, LPTSTR* lpszArgv)
 {
     // Register the handler function for the service
-
     gSvcStatusHandle = RegisterServiceCtrlHandlerEx(
         SVCNAME,
         SvcCtrlHandler,
@@ -147,12 +146,6 @@ VOID WINAPI SvcMain(DWORD dwArgc, LPTSTR* lpszArgv)
     if (!gSvcStatusHandle)
     {
         SvcReportEvent(TEXT("RegisterServiceCtrlHandler"));
-        return;
-    }
-    auto a = RegisterPowerSettingNotification(gSvcStatusHandle, &GUID_MONITOR_POWER_ON, DEVICE_NOTIFY_SERVICE_HANDLE);
-    if (a == NULL)
-    {
-        SvcReportEvent(TEXT("RegisterPowerSettingNotification"));
         return;
     }
     // These SERVICE_STATUS members remain as set here
@@ -172,7 +165,7 @@ VOID WINAPI SvcMain(DWORD dwArgc, LPTSTR* lpszArgv)
 
  unsigned __stdcall waitForMonitorOnEvent(void* p_userData)
 {
-     UtilitiesRuntime* utilities = (UtilitiesRuntime*)p_userData;
+    UtilitiesRuntime* utilities = (UtilitiesRuntime*)p_userData;
     HANDLE onEvent = OpenEvent(EVENT_ALL_ACCESS, FALSE, TEXT("MonitorOn"));
     HANDLE offEvent = OpenEvent(EVENT_ALL_ACCESS, FALSE, TEXT("MonitorOff"));
     if (onEvent == NULL || offEvent == NULL) return 1;
@@ -186,13 +179,17 @@ VOID WINAPI SvcMain(DWORD dwArgc, LPTSTR* lpszArgv)
         switch (index)
         {
         case 0:
-            
             for (int i = 0; !utilities->turnOnDisplay() && i < 10; ++i)
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            utilities->setCurrentMonitorState(MonitorState::MONITOR_ON);
             ResetEvent(onEvent);
             break;
         case 1:
-            if(!utilities->turnOffDisplay()) svcReportEvent(utilities->getLastError());
+            if (utilities->getOtherMonitorState() == MonitorState::MONITOR_OFF)
+            {
+                if (!utilities->turnOffDisplay()) svcReportEvent(utilities->getLastError());
+                utilities->setCurrentMonitorState(MonitorState::MONITOR_OFF);
+            }
             ResetEvent(offEvent);
             break;
         default:
@@ -219,26 +216,62 @@ VOID WINAPI SvcMain(DWORD dwArgc, LPTSTR* lpszArgv)
 
 VOID SvcInit(DWORD dwArgc, LPTSTR* lpszArgv)
 {
-    // TO_DO: Declare and set any required variables.
-    //   Be sure to periodically call ReportSvcStatus() with 
-    //   SERVICE_START_PENDING. If initialization fails, call
-    //   ReportSvcStatus with SERVICE_STOPPED.
-    
+    // Register for power events
+    HPOWERNOTIFY powerNotifyHandle = RegisterPowerSettingNotification(gSvcStatusHandle, &GUID_CONSOLE_DISPLAY_STATE, DEVICE_NOTIFY_SERVICE_HANDLE);
+    if (powerNotifyHandle == NULL)
+    {
+        SvcReportEvent(TEXT("RegisterPowerSettingNotification"));
+        return;
+    }
     ReportSvcStatus(SERVICE_START_PENDING, NO_ERROR, 0);
+
+    // Initialize pretty much everything in the utilities
     bool result = true;
     unique_ptr<UtilitiesRuntime> utilities(new UtilitiesRuntime(result));
     if(!result)
     {
         svcReportEvent(utilities->getLastError());
         ReportSvcStatus(SERVICE_STOPPED, NO_ERROR, 0);
+        UnregisterPowerSettingNotification(powerNotifyHandle);
         return;
     }
     ReportSvcStatus(SERVICE_START_PENDING, NO_ERROR, 0);
+
+    // Initialize and start the server if it needs to be
+    if (utilities->ensureServerEnvironment())
+    {
+        HANDLE serverRunningEvent = CreateEvent(NULL, TRUE, FALSE, L"ServerRunning");
+        if (serverRunningEvent == NULL)
+        {
+            ReportSvcStatus(SERVICE_STOPPED, ERROR_TIMEOUT, 0);
+            UnregisterPowerSettingNotification(powerNotifyHandle);
+            return;
+        }
+        uintptr_t serverThread = _beginthreadex(NULL, 0, &UtilitiesRuntime::initChatServer, nullptr, 0, NULL);
+        if (serverThread == -1L)
+        {
+            ReportSvcStatus(SERVICE_STOPPED, ERROR_TIMEOUT, 0);
+            UnregisterPowerSettingNotification(powerNotifyHandle);
+            return;
+        }
+        if (WaitForSingleObject(serverRunningEvent, 5000) == WAIT_TIMEOUT)
+        {
+            svcReportEvent(utilities->getLastError());
+            ReportSvcStatus(SERVICE_STOPPED, ERROR_TIMEOUT, 0);
+            UnregisterPowerSettingNotification(powerNotifyHandle);
+            CloseHandle(serverRunningEvent);
+            return;
+        }
+    }
+    
+    ReportSvcStatus(SERVICE_START_PENDING, NO_ERROR, 0);
+    thread t(&UtilitiesRuntime::connectClient, utilities.get());
     uintptr_t TSE = _beginthreadex(NULL, 0, &waitForMonitorOnEvent, (void*)utilities.get(),0, NULL);
     
     if (TSE == -1L)
     {
         ReportSvcStatus(SERVICE_STOPPED, ERROR_TIMEOUT, 0);
+        UnregisterPowerSettingNotification(powerNotifyHandle);
         return;
     }
     HANDLE threadStopEvent = (HANDLE)TSE;
@@ -254,6 +287,7 @@ VOID SvcInit(DWORD dwArgc, LPTSTR* lpszArgv)
     if (ghSvcStopEvent == NULL)
     {
         ReportSvcStatus(SERVICE_STOPPED, GetLastError(), 0);
+        UnregisterPowerSettingNotification(powerNotifyHandle);
         return;
     }
 
@@ -262,19 +296,23 @@ VOID SvcInit(DWORD dwArgc, LPTSTR* lpszArgv)
     ReportSvcStatus(SERVICE_RUNNING, NO_ERROR, 0);
 
     // TO_DO: Perform work until service stops.
-    HANDLE stopEvents[] = { threadStopEvent, ghSvcStopEvent };
+    vector<HANDLE> stopEvents = { move(threadStopEvent), move(ghSvcStopEvent) };
 
     while (1)
     {
         // Check whether to stop the service.
         
-        DWORD res = WaitForMultipleObjects(2, stopEvents, FALSE, INFINITE) - WAIT_OBJECT_0;
-        if (res == 0) 
+        DWORD res = WaitForMultipleObjects(stopEvents.size(), stopEvents.data(), FALSE, INFINITE) - WAIT_OBJECT_0;
+        switch (res)
+        {
+        case 0:
             ReportSvcStatus(SERVICE_STOPPED, ERROR_TIMEOUT, 0);
-        else
+            break;
+        default:
             ReportSvcStatus(SERVICE_STOPPED, NO_ERROR, 0);
-
-        CloseHandle(threadStopEvent);
+        }
+        UnregisterPowerSettingNotification(powerNotifyHandle);
+        if (stopEvents[0] != 0) CloseHandle(stopEvents[0]);
         return;
     }
 }
@@ -346,7 +384,7 @@ DWORD WINAPI SvcCtrlHandler(DWORD dwCtrl, DWORD dwEventType, LPVOID lpEventData,
     case SERVICE_CONTROL_POWEREVENT:
     {
         POWERBROADCAST_SETTING* pbs = (POWERBROADCAST_SETTING*)lpEventData;
-        if (pbs->Data[0] == 1)
+        if (pbs->Data[0] == static_cast<DWORD>(MonitorState::MONITOR_ON)) // Monitor is powered ON
         {
             HANDLE _mEvent = OpenEvent(EVENT_ALL_ACCESS, FALSE, TEXT("MonitorOn"));
             if (_mEvent == NULL) return NO_ERROR;
@@ -354,7 +392,7 @@ DWORD WINAPI SvcCtrlHandler(DWORD dwCtrl, DWORD dwEventType, LPVOID lpEventData,
             SetEvent(_mEvent);
             CloseHandle(_mEvent);
         }
-        else
+        else if(pbs->Data[0] == static_cast<DWORD>(MonitorState::MONITOR_OFF)) // Monitor is powered OFF
         {
             HANDLE _mEvent = OpenEvent(EVENT_ALL_ACCESS, FALSE, TEXT("MonitorOff"));
             if (_mEvent == NULL) return NO_ERROR;
@@ -362,7 +400,6 @@ DWORD WINAPI SvcCtrlHandler(DWORD dwCtrl, DWORD dwEventType, LPVOID lpEventData,
             SetEvent(_mEvent);
             CloseHandle(_mEvent);
         }
-        std::this_thread::sleep_for(std::chrono::seconds(1));
     }
         return NO_ERROR;
         
@@ -448,3 +485,4 @@ VOID SvcReportEvent(LPTSTR szFunction)
         DeregisterEventSource(hEventSource);
     }
 }
+

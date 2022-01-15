@@ -11,8 +11,10 @@ using tcp = boost::asio::ip::tcp;
 string UtilitiesRuntime::Last_error_ = "";
 string UtilitiesRuntime::Path_to_KeyFile_ = "";
 string UtilitiesRuntime::MacBuffer_ = "\xff\xff\xff\xff\xff\xff";
+string UtilitiesRuntime::LocalIP_ = "";
 HANDLE UtilitiesRuntime::monitorOffEvent = NULL;
 HANDLE UtilitiesRuntime::monitorOnEvent = NULL;
+MonitorState OtherState_ = MonitorState::MONITOR_OFF;
 wstring UtilitiesRuntime::widen(string& str) const
 {
     return wstring_convert<codecvt_utf8<wchar_t>>().from_bytes(str);
@@ -23,6 +25,9 @@ UtilitiesRuntime::UtilitiesRuntime(bool& result)
 }
 UtilitiesRuntime::~UtilitiesRuntime()
 {
+
+    Client_->close();
+    delete Client_;
 }
 string UtilitiesRuntime::narrow(wstring sInput) const 
 {
@@ -273,4 +278,94 @@ bool UtilitiesRuntime::turnOnDisplay() const
 
     WSACleanup();
     return true;
+}
+
+unsigned __stdcall UtilitiesRuntime::initChatServer(void* pUserData)
+{
+    // Check if env variable is defined
+    try
+    {
+        boost::asio::io_service io_service;
+        tcp::endpoint endpoint(tcp::v4(), std::atoi(SERVICE_PORT));
+        endpoint.address(boost::asio::ip::make_address(LocalIP_));
+        ChatServer server(io_service, endpoint);
+        HANDLE serverRunningEvent = OpenEvent(EVENT_ALL_ACCESS, FALSE, L"ServerRunning");
+        if (serverRunningEvent != NULL) SetEvent(serverRunningEvent);
+        else
+        {
+            Last_error_ = "Something went wrong trying to signal the server running event!";
+            return 3;
+        }
+        CloseHandle(serverRunningEvent);
+        io_service.run();
+        return 0;
+    }
+    catch (std::exception& e)
+    {
+        Last_error_ = "Encountered an error while starting the server! Error: ";
+        Last_error_.append(e.what());
+        return 1;
+    }
+
+}
+bool UtilitiesRuntime::ensureServerEnvironment()
+{
+    if (!LocalIP_.empty()) return true;
+    char IPAddress[30];
+    DWORD ret = GetEnvironmentVariableA("RunServer", IPAddress, 30);
+    if (ret == 0)
+        return false;
+
+    LocalIP_ = IPAddress;
+    return true;
+}
+void runClient(boost::asio::io_service* Io_service_)
+{
+    try
+    {
+        Io_service_->run();
+    }
+    catch (const exception& e)
+    {
+        cout << e.what();
+        return;
+    }
+}
+bool UtilitiesRuntime::connectClient()
+{
+    try
+    {        
+        boost::asio::io_service io_service;
+        tcp::resolver resolver(io_service);
+        auto endpoint_iterator = resolver.resolve({ SERVER_IP_ADDRESS, SERVICE_PORT });
+        Client_ = new ChatClient(io_service, endpoint_iterator, boost::asio::ip::host_name().c_str());
+
+        io_service.run();
+    }
+    catch (std::exception& e)
+    {
+        Last_error_ = "Error Connecting client: ";
+        Last_error_.append(e.what());
+        return false;
+    }
+
+    return true;
+}
+
+
+void UtilitiesRuntime::sendMessageToClients(MonitorState state)
+{
+    const char* message = state == MonitorState::MONITOR_ON ? "ON" : "OFF";
+    ChatMessage msg;
+    msg.body_length(strlen(message));
+    std::memcpy(msg.body(), message, msg.body_length());
+    msg.encode_header();
+    Client_->write(msg);
+}
+
+MonitorState UtilitiesRuntime::getOtherMonitorState() const
+{
+    const char* stateString = Client_->getOtherState();
+    return strcmp(stateString, "ON") == 0 ? MonitorState::MONITOR_ON : MonitorState::MONITOR_OFF;
+
 }
