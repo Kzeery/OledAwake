@@ -334,12 +334,22 @@ void runClient(boost::asio::io_service* Io_service_)
 bool UtilitiesRuntime::connectClient()
 {
     try
-    {        
+    {       
+        HANDLE clientRunningEvent = OpenEvent(EVENT_ALL_ACCESS, FALSE, L"clientRunning");
         boost::asio::io_service io_service;
         tcp::resolver resolver(io_service);
         auto endpoint_iterator = resolver.resolve({ SERVER_IP_ADDRESS, SERVICE_PORT });
         Client_ = new ChatClient(io_service, endpoint_iterator, boost::asio::ip::host_name().c_str());
-
+        if (clientRunningEvent != NULL)
+        {
+            SetEvent(clientRunningEvent);
+            CloseHandle(clientRunningEvent);
+        }
+        else
+        {
+            Last_error_ = "Something went wrong trying to signal the client running event!";
+            return false;
+        }
         io_service.run();
     }
     catch (std::exception& e)

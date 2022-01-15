@@ -265,7 +265,16 @@ VOID SvcInit(DWORD dwArgc, LPTSTR* lpszArgv)
     }
     
     ReportSvcStatus(SERVICE_START_PENDING, NO_ERROR, 0);
+    HANDLE clientRunningEvent = CreateEvent(NULL, TRUE, FALSE, L"clientRunning");
     thread t(&UtilitiesRuntime::connectClient, utilities.get());
+    if (clientRunningEvent != NULL && WaitForSingleObject(clientRunningEvent, 5000) == WAIT_TIMEOUT)
+    {
+        svcReportEvent(utilities->getLastError());
+        ReportSvcStatus(SERVICE_STOPPED, ERROR_TIMEOUT, 0);
+        UnregisterPowerSettingNotification(powerNotifyHandle);
+        CloseHandle(clientRunningEvent);
+        return;
+    }
     uintptr_t TSE = _beginthreadex(NULL, 0, &waitForMonitorOnEvent, (void*)utilities.get(),0, NULL);
     
     if (TSE == -1L)
@@ -275,8 +284,7 @@ VOID SvcInit(DWORD dwArgc, LPTSTR* lpszArgv)
         return;
     }
     HANDLE threadStopEvent = (HANDLE)TSE;
-    // Create an event. The control handler function, SvcCtrlHandler,
-    // signals this event when it receives the stop control code.
+
 
     ghSvcStopEvent = CreateEvent(
         NULL,    // default security attributes
@@ -290,6 +298,8 @@ VOID SvcInit(DWORD dwArgc, LPTSTR* lpszArgv)
         UnregisterPowerSettingNotification(powerNotifyHandle);
         return;
     }
+
+    utilities->setCurrentMonitorState(MonitorState::MONITOR_ON);
 
     // Report running status when initialization is complete.
 
