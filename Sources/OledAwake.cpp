@@ -41,7 +41,6 @@ int __cdecl _tmain(int argc, TCHAR* argv[])
         SvcInstall();
         return 0;
     }
-    std::this_thread::sleep_for(std::chrono::seconds(10));
     // TO_DO: Add any additional services for the process to this table.
     SERVICE_TABLE_ENTRY DispatchTable[] =
     {
@@ -171,25 +170,23 @@ VOID WINAPI SvcMain(DWORD dwArgc, LPTSTR* lpszArgv)
     if (onEvent == NULL || offEvent == NULL) return 1;
     ResetEvent(onEvent);
     ResetEvent(offEvent);
-    HANDLE events[] = { onEvent, offEvent };
+    vector<HANDLE> events = { move(onEvent), move(offEvent) };
     while (true)
     {
-        DWORD waitRes = WaitForMultipleObjects(2, events, FALSE, INFINITE);
+        DWORD waitRes = WaitForMultipleObjects(events.size(), events.data(), FALSE, INFINITE);
         DWORD index = waitRes - WAIT_OBJECT_0;
         switch (index)
         {
         case 0:
+            utilities->setCurrentMonitorState(MonitorState::MONITOR_ON);
             for (int i = 0; !utilities->turnOnDisplay() && i < 10; ++i)
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            utilities->setCurrentMonitorState(MonitorState::MONITOR_ON);
             ResetEvent(onEvent);
             break;
         case 1:
+            utilities->setCurrentMonitorState(MonitorState::MONITOR_OFF);
             if (utilities->getOtherMonitorState() == MonitorState::MONITOR_OFF)
-            {
                 if (!utilities->turnOffDisplay()) svcReportEvent(utilities->getLastError());
-                utilities->setCurrentMonitorState(MonitorState::MONITOR_OFF);
-            }
             ResetEvent(offEvent);
             break;
         default:
@@ -299,11 +296,12 @@ VOID SvcInit(DWORD dwArgc, LPTSTR* lpszArgv)
         return;
     }
 
-    utilities->setCurrentMonitorState(MonitorState::MONITOR_ON);
 
     // Report running status when initialization is complete.
 
     ReportSvcStatus(SERVICE_RUNNING, NO_ERROR, 0);
+    this_thread::sleep_for(chrono::seconds(1));
+    utilities->setCurrentMonitorState(MonitorState::MONITOR_ON);
 
     // TO_DO: Perform work until service stops.
     vector<HANDLE> stopEvents = { move(threadStopEvent), move(ghSvcStopEvent) };
