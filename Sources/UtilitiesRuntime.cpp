@@ -8,61 +8,26 @@ namespace websocket = beast::websocket;
 namespace net = boost::asio;            
 
 using tcp = boost::asio::ip::tcp;     
-string UtilitiesRuntime::Last_error_ = "";
+string UtilitiesRuntime::LastError_ = "";
 string UtilitiesRuntime::Path_to_KeyFile_ = "";
 string UtilitiesRuntime::MacBuffer_ = "\xff\xff\xff\xff\xff\xff";
-string UtilitiesRuntime::LocalIP_ = "";
-HANDLE UtilitiesRuntime::monitorOffEvent = NULL;
-HANDLE UtilitiesRuntime::monitorOnEvent = NULL;
-MonitorState OtherState_ = MonitorState::MONITOR_OFF;
-wstring UtilitiesRuntime::widen(string& str) const
-{
-    return wstring_convert<codecvt_utf8<wchar_t>>().from_bytes(str);
-}
-UtilitiesRuntime::UtilitiesRuntime(bool& result) 
-{
-    result = init();
-}
-UtilitiesRuntime::~UtilitiesRuntime()
-{
 
-    Client_->close();
-    delete Client_;
-}
-string UtilitiesRuntime::narrow(wstring sInput) const 
+UtilitiesRuntime::UtilitiesRuntime()
 {
-
-    // Calculate target buffer size
-    long len = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, sInput.c_str(), (int)sInput.size(),
-        NULL, 0, NULL, NULL);
-    if (len == 0)
-        return "";
-
-    // Convert character sequence
-    string out(len, 0);
-    if (len != WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, sInput.c_str(), (int)sInput.size(), &out[0], (int)out.size(), NULL, NULL))
-        return "";
-
-    return out;
 }
+
 bool UtilitiesRuntime::init()
 {
     initWOL();
-    if (!createWakeupEvent())
-    {
-        Last_error_ = "Failed to create wakeup events! Something went wrong!";
-        return false;
-    }
+
     HMODULE hDLL = LoadLibrary(L"Shlwapi.dll");
     if (hDLL == NULL)
-    {
-        Last_error_ = "Failed to load Shlwapi.dll";
-        return false;
-    }
+        SET_ERROR_EXIT("Failed to load Shlwapi.dll", false);
+
     PATH_APPEND_TYPE pathAppend = (PATH_APPEND_TYPE)GetProcAddress(hDLL, "PathAppendW");
     if (pathAppend == NULL)
     {
-        Last_error_ = "Failed to load PathAppendW function";
+        LastError_ = "Failed to load PathAppendW function";
         FreeLibrary(hDLL);
         return false;
     }
@@ -76,30 +41,27 @@ bool UtilitiesRuntime::init()
     }
     FreeLibrary(hDLL);
     if (Path_to_KeyFile_.size() == 0)
-    {
-        Last_error_ = "Failed to get KeyFile path";
-        return false;
-    }
+        SET_ERROR_EXIT("Failed to get KeyFile path", false);
+
     if (!loadKeyFromFile())
     {
         if (!setupSessionKey())
-        {
-            Last_error_ = "Failed to setup session key";
-            return false;
-        }
-        if (Key_.size() > 0)
-            Handshake_ = narrow(HANDSHAKE_PAIRED);
+            SET_ERROR_EXIT("Failed to setup session key", false);
+        if (Key_.empty())
+            SET_ERROR_EXIT("Received invalid session key", false)
+        Handshake_ = narrow(HANDSHAKE_PAIRED);
         saveKeyToFile();
     }
     initHandshake();
     return true;
 }
-wstring UtilitiesRuntime::getLastError() const
+
+void UtilitiesRuntime::initWOL()
 {
-    wstring ret = widen(Last_error_);
-    Last_error_ = "";
-    return ret;
+    for (int i = 0; i < 16; ++i)
+        MacBuffer_.append(OLED_MAC_ADDRESS);
 }
+
 bool UtilitiesRuntime::loadKeyFromFile()
 {
     ifstream keyFile(Path_to_KeyFile_);
@@ -114,7 +76,6 @@ bool UtilitiesRuntime::loadKeyFromFile()
         keyFile.close();
     }
     Key_ = "";
-    Handshake_ = narrow(HANDSHAKE_NOTPAIRED);
     return false;
 }
 
@@ -126,6 +87,12 @@ void UtilitiesRuntime::saveKeyToFile() const
         keyFile << Key_;
         keyFile.close();
     }
+}
+
+void UtilitiesRuntime::initHandshake()
+{
+    size_t ckf = Handshake_.find(Ck_);
+    Handshake_.replace(ckf, Ck_.length(), Key_);
 }
 
 bool UtilitiesRuntime::setupSessionKey()
@@ -165,12 +132,45 @@ bool UtilitiesRuntime::setupSessionKey()
         return true;
     }
     catch (const exception& e)
-    {
-        Last_error_ = SETUP_SESSION_KEY_ERROR;
-        Last_error_.append(e.what());
-        return false;
-    }
+        SET_ERROR_EXIT(string("Failed to set up session key with Oled TV. Please check config. Error Message: ") + e.what(), false);
 }
+
+
+wstring UtilitiesRuntime::getLastError() const
+{
+    wstring ret = widen(LastError_);
+    LastError_ = "";
+    return ret;
+}
+void UtilitiesRuntime::setLastError(string error)
+{
+    LastError_ = move(error);
+}
+
+
+wstring UtilitiesRuntime::widen(string& str) const
+{
+    return wstring_convert<codecvt_utf8<wchar_t>>().from_bytes(str);
+}
+
+
+string UtilitiesRuntime::narrow(wstring sInput) const 
+{
+
+    // Calculate target buffer size
+    long len = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, sInput.c_str(), (int)sInput.size(),
+        NULL, 0, NULL, NULL);
+    if (len == 0)
+        return "";
+
+    // Convert character sequence
+    string out(len, 0);
+    if (len != WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, sInput.c_str(), (int)sInput.size(), &out[0], (int)out.size(), NULL, NULL))
+        return "";
+
+    return out;
+}
+
 
 bool UtilitiesRuntime::turnOffDisplay() const
 {
@@ -205,32 +205,11 @@ bool UtilitiesRuntime::turnOffDisplay() const
         ws.write(net::buffer(std::string(Poweroffmess_)));
         ws.read(buffer); // read the response
         ws.close(websocket::close_code::normal);
-        return true;
     }
     catch (const exception& e)
-    {
-        Last_error_ = TURN_OFF_DISPLAY_ERROR;
-        Last_error_.append(e.what());
-        return false;
-    }
-}
+        SET_ERROR_EXIT(string("Failed to turn off display. Encountered an error. Please check config. Error Message: ") + e.what(), false);
+    return true;
 
-bool UtilitiesRuntime::createWakeupEvent() const
-{
-    monitorOnEvent = CreateEvent(NULL, TRUE, FALSE, TEXT("MonitorOn"));
-    monitorOffEvent = CreateEvent(NULL, TRUE, FALSE, TEXT("MonitorOff"));
-
-    return monitorOnEvent != NULL && monitorOffEvent != NULL;
-}
-void UtilitiesRuntime::initWOL()
-{
-    for (int i = 0; i < 16; ++i)
-        MacBuffer_.append(OLED_MAC_ADDRESS);
-}
-void UtilitiesRuntime::initHandshake()
-{
-    size_t ckf = Handshake_.find(Ck_);
-    Handshake_.replace(ckf, Ck_.length(), Key_);
 }
 
 bool UtilitiesRuntime::turnOnDisplay() const
@@ -280,102 +259,3 @@ bool UtilitiesRuntime::turnOnDisplay() const
     return true;
 }
 
-unsigned __stdcall UtilitiesRuntime::initChatServer(void* pUserData)
-{
-    // Check if env variable is defined
-    try
-    {
-        boost::asio::io_service io_service;
-        tcp::endpoint endpoint(tcp::v4(), std::atoi(SERVICE_PORT));
-        endpoint.address(boost::asio::ip::make_address(LocalIP_));
-        ChatServer server(io_service, endpoint);
-        HANDLE serverRunningEvent = OpenEvent(EVENT_ALL_ACCESS, FALSE, L"ServerRunning");
-        if (serverRunningEvent != NULL) SetEvent(serverRunningEvent);
-        else
-        {
-            Last_error_ = "Something went wrong trying to signal the server running event!";
-            return 3;
-        }
-        CloseHandle(serverRunningEvent);
-        io_service.run();
-        return 0;
-    }
-    catch (std::exception& e)
-    {
-        Last_error_ = "Encountered an error while starting the server! Error: ";
-        Last_error_.append(e.what());
-        return 1;
-    }
-
-}
-bool UtilitiesRuntime::ensureServerEnvironment()
-{
-    if (!LocalIP_.empty()) return true;
-    char IPAddress[30];
-    DWORD ret = GetEnvironmentVariableA("RunServer", IPAddress, 30);
-    if (ret == 0)
-        return false;
-
-    LocalIP_ = IPAddress;
-    return true;
-}
-void runClient(boost::asio::io_service* Io_service_)
-{
-    try
-    {
-        Io_service_->run();
-    }
-    catch (const exception& e)
-    {
-        cout << e.what();
-        return;
-    }
-}
-bool UtilitiesRuntime::connectClient()
-{
-    try
-    {       
-        HANDLE clientRunningEvent = OpenEvent(EVENT_ALL_ACCESS, FALSE, L"clientRunning");
-        boost::asio::io_service io_service;
-        tcp::resolver resolver(io_service);
-        auto endpoint_iterator = resolver.resolve({ SERVER_IP_ADDRESS, SERVICE_PORT });
-        Client_ = new ChatClient(io_service, endpoint_iterator, boost::asio::ip::host_name().c_str());
-        if (clientRunningEvent != NULL)
-        {
-            SetEvent(clientRunningEvent);
-            CloseHandle(clientRunningEvent);
-        }
-        else
-        {
-            Last_error_ = "Something went wrong trying to signal the client running event!";
-            return false;
-        }
-        io_service.run();
-    }
-    catch (std::exception& e)
-    {
-        Last_error_ = "Error Connecting client: ";
-        Last_error_.append(e.what());
-        return false;
-    }
-
-    return true;
-}
-
-
-void UtilitiesRuntime::sendMessageToClients(MonitorState state)
-{
-    const char* message = state == MonitorState::MONITOR_ON ? "ON" : "OFF";
-    ChatMessage msg;
-    msg.body_length(strlen(message));
-    std::memcpy(msg.body(), message, msg.body_length());
-    msg.encode_header();
-    Client_->write(msg);
-}
-
-MonitorState UtilitiesRuntime::getOtherMonitorState() const
-{
-    const char* stateString = Client_->getOtherState();
-    return strcmp(stateString, "ON") == 0 ? MonitorState::MONITOR_ON : MonitorState::MONITOR_OFF;
-
-}
