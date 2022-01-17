@@ -1,6 +1,7 @@
 #pragma once
 #include "ClientServerRuntime.h"
 #include <vector>
+typedef Runtime* (*GetRuntimeInstanceType)(void);
 enum RuntimeIndices
 {
     UtilitiesRuntimeIndex = 0,
@@ -15,6 +16,7 @@ public:
     static ClientServerRuntime* getClientServerRuntime();
 
 private:
-    static std::vector<std::unique_ptr<Runtime>> RuntimeVector_;
+    static std::vector<GetRuntimeInstanceType> RuntimeVector_;
+    static bool Initialized_;
 };
 

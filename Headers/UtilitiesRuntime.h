@@ -41,7 +41,6 @@ using namespace std;
 class UtilitiesRuntime : public Runtime
 {
 public:
-    UtilitiesRuntime();
 
     [[nodiscard]] string narrow(wstring sInput) const;
     [[nodiscard]] wstring widen(string& str) const;
@@ -53,9 +52,10 @@ public:
     bool turnOnDisplay() const;
 
     bool init();
-
+    static Runtime* getInstance();
 private:
-
+    UtilitiesRuntime();
+    ~UtilitiesRuntime() {  };
     bool loadKeyFromFile();
     bool setupSessionKey();
     void initWOL();
@@ -72,6 +72,8 @@ private:
     const string Ck_ = "CLIENTKEYx0x0x0";
     const string Host_ = OLED_TV_IP;
     const string Poweroffmess_ = "{ \"id\":\"0\",\"type\" : \"request\",\"uri\" : \"ssap://system/turnOff\"}";
+
+    static unique_ptr<Runtime> Instance_;
 
 };
 

@@ -1,30 +1,33 @@
 #include "RuntimeManager.h"
-vector<unique_ptr<Runtime>> RuntimeManager::RuntimeVector_ = {};
-
+vector<GetRuntimeInstanceType> RuntimeManager::RuntimeVector_ = {};
+bool RuntimeManager::Initialized_ = false;
 bool RuntimeManager::initAllRuntimes()
 {
-    if (!RuntimeVector_.empty()) return true;
-    auto UtilitiesRuntimePtr = unique_ptr<Runtime>(new UtilitiesRuntime);
-    auto ClientServerRuntimePtr = unique_ptr<Runtime>(new ClientServerRuntime);
+    if (Initialized_) return true;
 
-    RuntimeVector_.push_back(move(UtilitiesRuntimePtr));
-    RuntimeVector_.push_back(move(ClientServerRuntimePtr));
+    RuntimeVector_.push_back(UtilitiesRuntime::getInstance);
+    RuntimeVector_.push_back(ClientServerRuntime::getInstance);
 
     for (const auto& runtime : RuntimeVector_)
-    {
-        if (!runtime->init())
-            return false;
-    }
+        if (!runtime()->init()) return false;
+
+    Initialized_ = true;
     return true;
 }
 
 UtilitiesRuntime* RuntimeManager::getUtilitiesRuntime()
 {
-    return static_cast<UtilitiesRuntime*>(RuntimeVector_[RuntimeIndices::UtilitiesRuntimeIndex].get());
+    if (!initAllRuntimes()) throw std::exception("Cannot get Utilities Runtime!");
+    auto pRet = static_cast<UtilitiesRuntime*>(RuntimeVector_[RuntimeIndices::UtilitiesRuntimeIndex]());
+    if(pRet == nullptr) throw std::exception("Utilites Runtime is NULL!");
+    return pRet;
 }
 
 ClientServerRuntime* RuntimeManager::getClientServerRuntime()
 {
-    return static_cast<ClientServerRuntime*>(RuntimeVector_[RuntimeIndices::ClientServerRuntimeIndex].get());
+    if (!initAllRuntimes()) throw std::exception("Cannot get ClientServer Runtime!");
+    auto pRet = static_cast<ClientServerRuntime*>(RuntimeVector_[RuntimeIndices::ClientServerRuntimeIndex]());
+    if (pRet == nullptr) throw std::exception("ClientServer Runtime is NULL!");
+    return pRet;
 }
 

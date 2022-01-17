@@ -11,9 +11,19 @@ using tcp = boost::asio::ip::tcp;
 string UtilitiesRuntime::LastError_ = "";
 string UtilitiesRuntime::Path_to_KeyFile_ = "";
 string UtilitiesRuntime::MacBuffer_ = "\xff\xff\xff\xff\xff\xff";
+unique_ptr<Runtime> UtilitiesRuntime::Instance_ = nullptr;
 
 UtilitiesRuntime::UtilitiesRuntime()
 {
+}
+
+Runtime* UtilitiesRuntime::getInstance()
+{
+    if (Instance_.get() == nullptr)
+    {
+        Instance_ = unique_ptr<Runtime>(new UtilitiesRuntime);
+    }
+    return Instance_.get();
 }
 
 bool UtilitiesRuntime::init()

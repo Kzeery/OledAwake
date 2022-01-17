@@ -1,9 +1,20 @@
 #include "ClientServerRuntime.h"
+unique_ptr<Runtime> ClientServerRuntime::Instance_ = nullptr;
+
 ClientServerRuntime::~ClientServerRuntime()
 {
     ClientServerObject_->close();
     if (ClientServerObjectThread_.joinable()) 
         ClientServerObjectThread_.join();
+}
+
+Runtime* ClientServerRuntime::getInstance()
+{
+    if (Instance_.get() == nullptr)
+    {
+        Instance_ = unique_ptr<Runtime>(new ClientServerRuntime);
+    }
+    return Instance_.get();
 }
 
 bool ClientServerRuntime::init()
@@ -36,7 +47,7 @@ bool ClientServerRuntime::init()
             return false;
         }
 
-        std::thread ClientServerObjectThread_(&ClientServerRuntime::initClient, this);
+        ClientServerObjectThread_ = thread(&ClientServerRuntime::initClient, this);
         if (WaitForSingleObject(clientRunningEvent, 5000) == WAIT_TIMEOUT)
         {
             ClientServerObjectThread_.join();

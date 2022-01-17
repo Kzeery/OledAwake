@@ -6,15 +6,14 @@
 class ClientServerRuntime : public Runtime
 {
 public:
-    ClientServerRuntime() : ClientServerObject_(nullptr), LocalIP_(""), State_(MonitorState::MONITOR_ON) {}
-    ~ClientServerRuntime();
 
     bool init();
-
+    static Runtime* getInstance();
     MonitorState getOtherMonitorState() const;
     void setCurrentMonitorState(MonitorState state);
-    std::thread& getClientServerObjectThread() { return ClientServerObjectThread_; }
 private:
+    ClientServerRuntime() : ClientServerObject_(nullptr), LocalIP_(""), State_(MonitorState::MONITOR_ON) {}
+    ~ClientServerRuntime();
     bool ensureServerEnvironment();
     bool initServer();
     bool initClient();
@@ -26,5 +25,7 @@ private:
     std::thread ClientServerObjectThread_;
     std::string LocalIP_;
     MonitorState State_;
+    static unique_ptr<Runtime> Instance_;
+
 };
 

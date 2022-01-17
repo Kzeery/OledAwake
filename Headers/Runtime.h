@@ -2,6 +2,8 @@
 class Runtime
 {
 public:
-    virtual ~Runtime() {};
+    virtual ~Runtime() { };
     virtual bool init() = 0;
+    //virtual Runtime* getInstance() = 0;
 };
+
