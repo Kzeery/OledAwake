@@ -358,7 +358,7 @@ VOID SvcReportEvent(wstring& error_message)
 
     if (NULL != hEventSource)
     {
-        memcpy(Buffer, error_message.c_str(), sz);
+        memcpy(Buffer, error_message.c_str(), sz * sizeof(wchar_t));
 
         lpszStrings[0] = SVCNAME;
         lpszStrings[1] = Buffer;

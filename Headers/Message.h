@@ -4,7 +4,7 @@
 #include <cstring>
 #include <boost/asio.hpp>
 #define IDENTIFIER_LENGTH 32
-#define BODY_LENGTH 32
+#define BODY_LENGTH sizeof(int)
 #define MAX_MESSAGE_LENGTH  IDENTIFIER_LENGTH + BODY_LENGTH
 class Message;
 

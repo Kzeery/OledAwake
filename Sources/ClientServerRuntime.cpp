@@ -19,11 +19,13 @@ bool ClientServerRuntime::init()
         std::thread serverThread(&ClientServerRuntime::initServer, this);
         if (WaitForSingleObject(serverRunningEvent, 5000) == WAIT_TIMEOUT)
         {
+            serverThread.join();
             UtilitiesRuntime::setLastError("Server running event timed out!");
             CloseHandle(serverRunningEvent);
             return false;
         }
         serverThread.detach();
+
     }
     else
     {
@@ -37,6 +39,7 @@ bool ClientServerRuntime::init()
         std::thread clientThread(&ClientServerRuntime::initClient, this);
         if (WaitForSingleObject(clientRunningEvent, 5000) == WAIT_TIMEOUT)
         {
+            clientThread.join();
             UtilitiesRuntime::setLastError("Client running event timed out!");
             CloseHandle(clientRunningEvent);
             return false;
