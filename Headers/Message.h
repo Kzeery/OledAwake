@@ -3,9 +3,12 @@
 #include <cstdlib>
 #include <cstring>
 #include <boost/asio.hpp>
+#include <vector>
 #define IDENTIFIER_LENGTH 32
 #define BODY_LENGTH sizeof(int)
 #define MAX_MESSAGE_LENGTH  IDENTIFIER_LENGTH + BODY_LENGTH
+#define BODY_PTR Data_.data() + IDENTIFIER_LENGTH
+
 class Message;
 
 class ReadableClientServerObject
@@ -13,47 +16,41 @@ class ReadableClientServerObject
 public:
     virtual const int getOtherState() const = 0;
     virtual void write(Message& msg) = 0;
+    virtual void close() = 0;
     virtual ~ReadableClientServerObject() {};
 };
-
 class Message
 {
 public:
-    Message() :  Data_(new char[MAX_MESSAGE_LENGTH]), Body_(Data_ + IDENTIFIER_LENGTH)
+    Message() : Data_(std::vector<char>(MAX_MESSAGE_LENGTH, 0)) 
     {
-        memset(Data_, 0, MAX_MESSAGE_LENGTH);
-    }
-
-    Message(void* messageBody) :  Data_(new char[MAX_MESSAGE_LENGTH]), Body_(Data_ + IDENTIFIER_LENGTH)
-    {
-        memset(Data_, 0, MAX_MESSAGE_LENGTH);
-        std::memcpy(Body_, messageBody, BODY_LENGTH);
         setIdentifier(boost::asio::ip::host_name());
     }
 
-    ~Message()
+    Message(void* messageBody) :  Data_(std::vector<char>(MAX_MESSAGE_LENGTH, 0))
     {
-        delete[] Data_;
+        std::memcpy(BODY_PTR, messageBody, BODY_LENGTH);
+        setIdentifier(boost::asio::ip::host_name());
     }
 
     const char* getData() const
     {
-        return Data_;
+        return Data_.data();
     }
 
     char* getData()
     {
-        return Data_;
+        return Data_.data();
     }
 
     const char* getBody() const
     {
-        return Body_;
+        return BODY_PTR;
     }
 
     char* getBody()
     {
-        return Body_;
+        return BODY_PTR;
     }
 
     const std::string getIdentifier() const
@@ -64,13 +61,13 @@ public:
     bool decodeIdentifier()
     {
         char identifier[IDENTIFIER_LENGTH + 1] = "";
-        std::memcpy(identifier, Data_, IDENTIFIER_LENGTH);
+        std::memcpy(identifier, Data_.data(), IDENTIFIER_LENGTH);
         Identifier_ = identifier;
         return true;
     }
     
 private:
-    void setIdentifier(std::string& identifier)
+    void setIdentifier(std::string identifier)
     {
         if (identifier.size() > IDENTIFIER_LENGTH)
             identifier = identifier.substr(0, IDENTIFIER_LENGTH);
@@ -80,10 +77,8 @@ private:
 
     void encodeIdentifier()
     {
-        std::memcpy(Data_, Identifier_.c_str(), Identifier_.size());
+        std::memcpy(Data_.data(), Identifier_.c_str(), Identifier_.size());
     }
-
-    char* Data_;
-    char* Body_;
+    std::vector<char> Data_;
     std::string Identifier_;
 };

@@ -1,10 +1,15 @@
 #include "RuntimeManager.h"
-vector<Runtime*> RuntimeManager::RuntimeVector_ = {};
+vector<unique_ptr<Runtime>> RuntimeManager::RuntimeVector_ = {};
 
 bool RuntimeManager::initAllRuntimes()
 {
     if (!RuntimeVector_.empty()) return true;
-    RuntimeVector_ = { new UtilitiesRuntime() , new ClientServerRuntime() };
+    auto UtilitiesRuntimePtr = unique_ptr<Runtime>(new UtilitiesRuntime);
+    auto ClientServerRuntimePtr = unique_ptr<Runtime>(new ClientServerRuntime);
+
+    RuntimeVector_.push_back(move(UtilitiesRuntimePtr));
+    RuntimeVector_.push_back(move(ClientServerRuntimePtr));
+
     for (const auto& runtime : RuntimeVector_)
     {
         if (!runtime->init())
@@ -15,18 +20,11 @@ bool RuntimeManager::initAllRuntimes()
 
 UtilitiesRuntime* RuntimeManager::getUtilitiesRuntime()
 {
-    return static_cast<UtilitiesRuntime*>(RuntimeVector_[RuntimeIndices::UtilitiesRuntimeIndex]);
+    return static_cast<UtilitiesRuntime*>(RuntimeVector_[RuntimeIndices::UtilitiesRuntimeIndex].get());
 }
 
 ClientServerRuntime* RuntimeManager::getClientServerRuntime()
 {
-    return static_cast<ClientServerRuntime*>(RuntimeVector_[RuntimeIndices::ClientServerRuntimeIndex]);
+    return static_cast<ClientServerRuntime*>(RuntimeVector_[RuntimeIndices::ClientServerRuntimeIndex].get());
 }
 
-void RuntimeManager::destroyRuntimes()
-{
-    for (const auto& runtime : RuntimeVector_)
-    {
-        delete runtime;
-    }
-}

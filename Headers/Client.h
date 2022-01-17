@@ -14,7 +14,8 @@ public:
     Client(boost::asio::io_service& io_service,
         tcp::resolver::iterator endpoint_iterator,
         const char* name);
-    ~Client();
+
+    void close();
     void write(Message& msg);
     const int getOtherState() const;
 

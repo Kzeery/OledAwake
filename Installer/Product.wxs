@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
 	<?include "Includes.wxi"?>
-	<Product Id="*" Name="OledAwake" Language="1033" Version="1.2.1" Manufacturer="Kzeery" UpgradeCode="d02d649b-bb89-4923-a2b5-46e6d5084956">
+	<Product Id="*" Name="OledAwake" Language="1033" Version="1.2.2" Manufacturer="Kzeery" UpgradeCode="d02d649b-bb89-4923-a2b5-46e6d5084956">
 		<Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" InstallPrivileges="elevated" Platform="$(var.PlatformString)"/>
 		<MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
 		<MediaTemplate EmbedCab="yes" />

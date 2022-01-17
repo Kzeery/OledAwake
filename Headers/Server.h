@@ -83,9 +83,8 @@ public:
     Server(boost::asio::io_service& io_service,
         const tcp::endpoint& endpoint);
     const int getOtherState() const { return Room_.getOtherState(); }
-    void write(Message& msg) { 
-        return Room_.write(msg); 
-    }
+    void write(Message& msg);
+    void close();
 private:
     void doAccept();
 

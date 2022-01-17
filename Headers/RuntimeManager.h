@@ -14,9 +14,7 @@ public:
     static UtilitiesRuntime* getUtilitiesRuntime();
     static ClientServerRuntime* getClientServerRuntime();
 
-    static void destroyRuntimes();
-
 private:
-    static std::vector<Runtime*> RuntimeVector_;
+    static std::vector<std::unique_ptr<Runtime>> RuntimeVector_;
 };
 

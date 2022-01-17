@@ -13,7 +13,7 @@ public:
 
     MonitorState getOtherMonitorState() const;
     void setCurrentMonitorState(MonitorState state);
-
+    std::thread& getClientServerObjectThread() { return ClientServerObjectThread_; }
 private:
     bool ensureServerEnvironment();
     bool initServer();
@@ -22,7 +22,8 @@ private:
     void sendMessageToClients(MonitorState& state);
 
 private:
-    ReadableClientServerObject* ClientServerObject_;
+    unique_ptr<ReadableClientServerObject> ClientServerObject_;
+    std::thread ClientServerObjectThread_;
     std::string LocalIP_;
     MonitorState State_;
 };

@@ -26,11 +26,12 @@ const int Client::getOtherState() const
 {
     return *(int*) OtherMessage_.getBody();
 }
-
-Client::~Client()
+void Client::close()
 {
     IO_Service_.post([this]() { Socket_.close(); });
+
 }
+
 
 
 void Client::doConnect(tcp::resolver::iterator endpoint_iterator)

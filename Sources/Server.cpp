@@ -118,16 +118,23 @@ Server::Server(boost::asio::io_service& io_service,
     doAccept();
 }
 
+void Server::close()
+{
+    boost::asio::post(Acceptor_.get_executor(), [this] {Acceptor_.cancel(); });
+}
+
+void Server::write(Message& msg) {
+    return Room_.write(msg);
+}
+
 void Server::doAccept()
 {
     Acceptor_.async_accept(Socket_,
         [this](boost::system::error_code ec)
         {
-            if (!ec)
-            {
-                std::make_shared<Session>(std::move(Socket_), Room_)->start();
-            }
+            if (ec) return;
 
+            std::make_shared<Session>(std::move(Socket_), Room_)->start();
             doAccept();
         });
 }

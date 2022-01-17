@@ -169,10 +169,11 @@ VOID WINAPI SvcMain(DWORD dwArgc, LPTSTR* lpszArgv)
     ClientServerRuntime* clientServerRuntime = RuntimeManager::getClientServerRuntime();
     HANDLE onEvent = CreateEvent(NULL, TRUE, FALSE, L"MonitorOn");
     HANDLE offEvent = CreateEvent(NULL, TRUE, FALSE, L"MonitorOff");
-    if (onEvent == NULL || offEvent == NULL) return 1;
+    HANDLE threadKillEvent = CreateEvent(NULL, TRUE, FALSE, L"KillMonitorThread");
+    if (onEvent == NULL || offEvent == NULL || threadKillEvent == NULL) return 1;
     ResetEvent(onEvent);
     ResetEvent(offEvent);
-    vector<HANDLE> events = { move(onEvent), move(offEvent) };
+    vector<HANDLE> events = { move(onEvent), move(offEvent), move(threadKillEvent) };
     while (true)
     {
         DWORD waitRes = WaitForMultipleObjects(events.size(), events.data(), FALSE, INFINITE);
@@ -197,6 +198,8 @@ VOID WINAPI SvcMain(DWORD dwArgc, LPTSTR* lpszArgv)
         default:
             CloseHandle(onEvent);
             CloseHandle(offEvent);
+            CloseHandle(threadKillEvent);
+            _endthreadex(0);
             return 0;
         }
     }
@@ -204,37 +207,23 @@ VOID WINAPI SvcMain(DWORD dwArgc, LPTSTR* lpszArgv)
 
  
 
-#define CLEAN_RESOURCES(msg, code) SvcReportEvent(msg); ReportSvcStatus(SERVICE_STOPPED, code, 0); if(powerNotifyHandle) UnregisterPowerSettingNotification(powerNotifyHandle); RuntimeManager::destroyRuntimes();
+#define CLEAN_RESOURCES(msg, code) SvcReportEvent(msg); ReportSvcStatus(SERVICE_STOPPED, code, 0); if(powerNotifyHandle) UnregisterPowerSettingNotification(powerNotifyHandle);
 #define CLEAN_AND_EXIT(msg, code) { CLEAN_RESOURCES(msg, code); return; }
 
 VOID SvcInit(DWORD dwArgc, LPTSTR* lpszArgv)
 {
-
     // Register for power events
     HPOWERNOTIFY powerNotifyHandle = RegisterPowerSettingNotification(gSvcStatusHandle, &GUID_CONSOLE_DISPLAY_STATE, DEVICE_NOTIFY_SERVICE_HANDLE);
     if (powerNotifyHandle == NULL)
         CLEAN_AND_EXIT(TEXT("RegisterPowerSettingNotification"), NO_ERROR);
 
     ReportSvcStatus(SERVICE_START_PENDING, NO_ERROR, 0);
-    
     // Initialize pretty much everything in the utilities
     bool result = RuntimeManager::initAllRuntimes();
     if(!result)
         CLEAN_AND_EXIT(RuntimeManager::getUtilitiesRuntime()->getLastError(), NO_ERROR);
 
     ReportSvcStatus(SERVICE_START_PENDING, NO_ERROR, 0);
-
-    
-    ReportSvcStatus(SERVICE_START_PENDING, NO_ERROR, 0);
-
-
-    uintptr_t TSE = _beginthreadex(NULL, 0, &waitForMonitorOnEvent, nullptr, 0, NULL);
-    
-    if (TSE == -1L)
-        CLEAN_AND_EXIT(TEXT("BeginMonitorThread"), ERROR_TIMEOUT);
-
-    HANDLE threadStopEvent = (HANDLE)TSE;
-
 
     ghSvcStopEvent = CreateEvent(
         NULL,    // default security attributes
@@ -245,6 +234,15 @@ VOID SvcInit(DWORD dwArgc, LPTSTR* lpszArgv)
     if (ghSvcStopEvent == NULL)
         CLEAN_AND_EXIT(TEXT("CreateghSvcStopEvent"), ERROR_TIMEOUT);
 
+    uintptr_t TSE = _beginthreadex(NULL, 0, &waitForMonitorOnEvent, nullptr, 0, NULL);
+    
+    if (TSE == -1L)
+    {
+        CloseHandle(ghSvcStopEvent);
+        CLEAN_AND_EXIT(TEXT("BeginMonitorThread"), ERROR_TIMEOUT);
+    }
+
+    HANDLE threadStopEvent = (HANDLE)TSE;
 
     // Report running status when initialization is complete.
 
@@ -262,14 +260,24 @@ VOID SvcInit(DWORD dwArgc, LPTSTR* lpszArgv)
         DWORD res = WaitForMultipleObjects(stopEvents.size(), stopEvents.data(), FALSE, INFINITE) - WAIT_OBJECT_0;
         switch (res)
         {
-        case 0:
+        case 0: // Monitoring Thread Stopped
             ReportSvcStatus(SERVICE_STOPPED, ERROR_TIMEOUT, 0);
             break;
-        default:
+        default: // Received Stop Event from Windows, need to stop the monitoring thread
             ReportSvcStatus(SERVICE_STOPPED, NO_ERROR, 0);
+            HANDLE threadKillEvent = OpenEvent(EVENT_ALL_ACCESS, FALSE, L"KillMonitorThread");
+            if (threadKillEvent != NULL)
+            {
+                SetEvent(threadKillEvent);
+                WaitForSingleObject(stopEvents[0], 2000); // Make sure thread gets closed
+                CloseHandle(threadKillEvent);
+            }
+
         }
         UnregisterPowerSettingNotification(powerNotifyHandle);
-        if (stopEvents[0] != 0) CloseHandle(stopEvents[0]);
+        for (const auto& event : stopEvents)
+            if (event != NULL) CloseHandle(event);
+
         return;
     }
 }
@@ -352,16 +360,15 @@ VOID SvcReportEvent(wstring& error_message)
     size_t sz = error_message.size() + 1;
     HANDLE hEventSource;
     LPCTSTR lpszStrings[2];
-    TCHAR *Buffer = new TCHAR[sz];
-
+    vector<TCHAR> Buffer(sz, 0);
     hEventSource = RegisterEventSource(NULL, SVCNAME);
 
     if (NULL != hEventSource)
     {
-        memcpy(Buffer, error_message.c_str(), sz * sizeof(wchar_t));
+        memcpy(Buffer.data(), error_message.c_str(), sz * sizeof(wchar_t));
 
         lpszStrings[0] = SVCNAME;
-        lpszStrings[1] = Buffer;
+        lpszStrings[1] = Buffer.data();
 
         ReportEvent(hEventSource,        // event log handle
             EVENTLOG_WARNING_TYPE, // event type
@@ -375,7 +382,6 @@ VOID SvcReportEvent(wstring& error_message)
         
         DeregisterEventSource(hEventSource);
     }
-    delete[] Buffer;
 }
 
 

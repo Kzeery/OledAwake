@@ -1,8 +1,9 @@
 #include "ClientServerRuntime.h"
 ClientServerRuntime::~ClientServerRuntime()
 {
-    if (ClientServerObject_ != nullptr)
-        delete ClientServerObject_;
+    ClientServerObject_->close();
+    if (ClientServerObjectThread_.joinable()) 
+        ClientServerObjectThread_.join();
 }
 
 bool ClientServerRuntime::init()
@@ -16,15 +17,14 @@ bool ClientServerRuntime::init()
             return false;
         }
 
-        std::thread serverThread(&ClientServerRuntime::initServer, this);
+        ClientServerObjectThread_ = thread(&ClientServerRuntime::initServer, this);
         if (WaitForSingleObject(serverRunningEvent, 5000) == WAIT_TIMEOUT)
         {
-            serverThread.join();
+            ClientServerObjectThread_.join();
             UtilitiesRuntime::setLastError("Server running event timed out!");
             CloseHandle(serverRunningEvent);
             return false;
         }
-        serverThread.detach();
 
     }
     else
@@ -36,15 +36,14 @@ bool ClientServerRuntime::init()
             return false;
         }
 
-        std::thread clientThread(&ClientServerRuntime::initClient, this);
+        std::thread ClientServerObjectThread_(&ClientServerRuntime::initClient, this);
         if (WaitForSingleObject(clientRunningEvent, 5000) == WAIT_TIMEOUT)
         {
-            clientThread.join();
+            ClientServerObjectThread_.join();
             UtilitiesRuntime::setLastError("Client running event timed out!");
             CloseHandle(clientRunningEvent);
             return false;
         }
-        clientThread.detach();
     }
     return true;
 }
@@ -80,7 +79,7 @@ bool ClientServerRuntime::initServer()
         boost::asio::io_service io_service;
         tcp::endpoint endpoint(tcp::v4(), std::atoi(SERVICE_PORT));
         endpoint.address(boost::asio::ip::make_address(LocalIP_));
-        ClientServerObject_ = new Server(io_service, endpoint);
+        ClientServerObject_ = unique_ptr<ReadableClientServerObject>(new Server(io_service, endpoint));
         HANDLE serverRunningEvent = OpenEvent(EVENT_ALL_ACCESS, FALSE, L"ServerRunning");
 
         if (serverRunningEvent != NULL) SetEvent(serverRunningEvent);
@@ -105,7 +104,7 @@ bool ClientServerRuntime::initClient()
         boost::asio::io_service io_service;
         tcp::resolver resolver(io_service);
         auto endpoint_iterator = resolver.resolve({ SERVER_IP_ADDRESS, SERVICE_PORT });
-        ClientServerObject_ = new Client(io_service, endpoint_iterator, boost::asio::ip::host_name().c_str());
+        ClientServerObject_ = unique_ptr<ReadableClientServerObject>(new Client(io_service, endpoint_iterator, boost::asio::ip::host_name().c_str()));
 
         if (clientRunningEvent != NULL) SetEvent(clientRunningEvent);
 
