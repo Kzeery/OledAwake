@@ -269,3 +269,41 @@ bool UtilitiesRuntime::turnOnDisplay() const
     return true;
 }
 
+bool UtilitiesRuntime::switchInput(Inputs input) const
+{
+    string host = Host_;
+    try
+    {
+        string message = input == Inputs::HDMI1 ? SWITCH_INPUT_MESSAGE(HDMI_1) : SWITCH_INPUT_MESSAGE(HDMI_2);
+        time_t origtim = time(0);
+        net::io_context ioc;
+
+
+        tcp::resolver resolver{ ioc };
+        websocket::stream<tcp::socket> ws{ ioc };
+        auto const results = resolver.resolve(host, SERVICE_PORT);
+        auto ep = net::connect(ws.next_layer(), results);
+        host += ':' + std::to_string(ep.port());
+        ESCAPE_TOO_MUCH_TIME(origtim, 10);
+
+        ws.set_option(websocket::stream_base::decorator(
+            [](websocket::request_type& req)
+            {
+                req.set(http::field::user_agent,
+                    std::string(BOOST_BEAST_VERSION_STRING) +
+                    " websocket-client-LGTVsvc");
+            }));
+        ESCAPE_TOO_MUCH_TIME(origtim, 10);
+        ws.handshake(host, "/");
+        ESCAPE_TOO_MUCH_TIME(origtim, 10);
+        beast::flat_buffer buffer;
+
+        ws.write(net::buffer(std::string(Handshake_)));
+        ws.read(buffer); // read the response
+        ws.write(net::buffer(message));
+        ws.read(buffer); // read the response
+    }
+    catch (const exception& e)
+        SET_ERROR_EXIT(string("Failed to switch HDMI. Encountered an error. Please check config. Error Message: ") + e.what(), false);
+    return true;
+}
