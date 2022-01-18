@@ -86,6 +86,7 @@ bool UtilitiesRuntime::loadKeyFromFile()
         keyFile.close();
     }
     Key_ = "";
+    Handshake_ = narrow(HANDSHAKE_NOTPAIRED);
     return false;
 }
 
@@ -146,7 +147,7 @@ bool UtilitiesRuntime::setupSessionKey()
 }
 
 
-wstring UtilitiesRuntime::getLastError() const
+wstring UtilitiesRuntime::getLastError()
 {
     wstring ret = widen(LastError_);
     LastError_ = "";
@@ -158,13 +159,13 @@ void UtilitiesRuntime::setLastError(string error)
 }
 
 
-wstring UtilitiesRuntime::widen(string& str) const
+wstring UtilitiesRuntime::widen(string& str)
 {
     return wstring_convert<codecvt_utf8<wchar_t>>().from_bytes(str);
 }
 
 
-string UtilitiesRuntime::narrow(wstring sInput) const 
+string UtilitiesRuntime::narrow(wstring sInput) 
 {
 
     // Calculate target buffer size
@@ -241,10 +242,16 @@ bool UtilitiesRuntime::turnOnDisplay() const
         WSACleanup();
         return false;
     }
+    BOOL val = true;
+    if (setsockopt(SendSocket, SOL_SOCKET, SO_BROADCAST, (const char*)&val, sizeof(BOOL)) != 0)
+    {
+        WSACleanup();
+        return false;
+    }
 
     RecvAddr.sin_family = AF_INET;
     RecvAddr.sin_port = htons(OLED_TV_PORT);
-    iResult = inet_pton(AF_INET, OLED_TV_IP, (PVOID)&RecvAddr.sin_addr);
+    iResult = InetPton(AF_INET, BROADCAST_ADDRESS, &RecvAddr.sin_addr.s_addr);
     if (iResult != 1)
     {
         WSACleanup();

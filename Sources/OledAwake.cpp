@@ -177,7 +177,7 @@ VOID WINAPI SvcMain(DWORD dwArgc, LPTSTR* lpszArgv)
     if (onEvent == NULL || offEvent == NULL || threadKillEvent == NULL) return 1;
     if (switchTo1Event == NULL || switchTo2Event == NULL) return 2;
 
-    vector<HANDLE> events = { move(onEvent), move(offEvent), move(switchTo1Event), move(switchTo2Event), move(threadKillEvent) };
+    vector<HANDLE> events = { onEvent, offEvent, switchTo1Event, switchTo2Event, threadKillEvent };
     while (true)
     {
         DWORD waitRes = WaitForMultipleObjects(events.size(), events.data(), FALSE, INFINITE);
@@ -196,17 +196,17 @@ VOID WINAPI SvcMain(DWORD dwArgc, LPTSTR* lpszArgv)
         case 1: // Turn monitor off
             clientServerRuntime->setCurrentMonitorState(MonitorState::MONITOR_OFF);
             if (clientServerRuntime->getOtherMonitorState() == MonitorState::MONITOR_OFF)
-                if (!utilities->turnOffDisplay()) SvcReportEvent(utilities->getLastError());
+                if (!utilities->turnOffDisplay()) SvcReportEvent(UtilitiesRuntime::getLastError());
             ResetEvent(events[index]);
             break;
         case 2: // Switch to HDMI 1
             if (!utilities->switchInput(Inputs::HDMI1))
-                SvcReportEvent(utilities->getLastError());
+                SvcReportEvent(UtilitiesRuntime::getLastError());
             ResetEvent(events[index]);
             break;
         case 3: // Switch to HDMI 2
             if (!utilities->switchInput(Inputs::HDMI2))
-                SvcReportEvent(utilities->getLastError());
+                SvcReportEvent(UtilitiesRuntime::getLastError());
             ResetEvent(events[index]);
             break;
         default:
@@ -243,7 +243,7 @@ VOID SvcInit(DWORD dwArgc, LPTSTR* lpszArgv)
     // Initialize pretty much everything in the utilities
     bool result = RuntimeManager::initAllRuntimes();
     if(!result)
-        CLEAN_AND_EXIT(RuntimeManager::getUtilitiesRuntime()->getLastError(), NO_ERROR);
+        CLEAN_AND_EXIT(UtilitiesRuntime::getLastError(), NO_ERROR);
 
     
     ReportSvcStatus(SERVICE_START_PENDING, NO_ERROR, 0);
