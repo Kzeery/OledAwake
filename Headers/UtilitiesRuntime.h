@@ -28,6 +28,7 @@
     #define OLED_TV_IP "255.255.255.255"
     #define OLED_MAC_ADDRESS "\x00\x00\x00\x00\x00\x00"
     #define SERVER_IP_ADDRESS "0.0.0.0"
+    #define BROADCAST_ADDRESS "192.168.0.255"
 #endif
 
 enum class MonitorState {
@@ -42,9 +43,9 @@ class UtilitiesRuntime : public Runtime
 {
 public:
 
-    [[nodiscard]] string narrow(wstring sInput) const;
-    [[nodiscard]] wstring widen(string& str) const;
-    [[nodiscard]] wstring getLastError() const;
+    [[nodiscard]] static string narrow(wstring sInput);
+    [[nodiscard]] static wstring widen(string& str);
+    [[nodiscard]] static wstring getLastError();
 
     static void setLastError(string error);
 

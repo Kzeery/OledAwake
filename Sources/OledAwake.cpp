@@ -173,7 +173,7 @@ VOID WINAPI SvcMain(DWORD dwArgc, LPTSTR* lpszArgv)
     if (onEvent == NULL || offEvent == NULL || threadKillEvent == NULL) return 1;
     ResetEvent(onEvent);
     ResetEvent(offEvent);
-    vector<HANDLE> events = { move(onEvent), move(offEvent), move(threadKillEvent) };
+    vector<HANDLE> events = { onEvent, offEvent, threadKillEvent };
     while (true)
     {
         DWORD waitRes = WaitForMultipleObjects(events.size(), events.data(), FALSE, INFINITE);
@@ -187,13 +187,13 @@ VOID WINAPI SvcMain(DWORD dwArgc, LPTSTR* lpszArgv)
                 utilities->turnOnDisplay();
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
-            ResetEvent(onEvent);
+            ResetEvent(events[index]);
             break;
         case 1:
             clientServerRuntime->setCurrentMonitorState(MonitorState::MONITOR_OFF);
             if (clientServerRuntime->getOtherMonitorState() == MonitorState::MONITOR_OFF)
-                if (!utilities->turnOffDisplay()) SvcReportEvent(utilities->getLastError());
-            ResetEvent(offEvent);
+                if (!utilities->turnOffDisplay()) SvcReportEvent(UtilitiesRuntime::getLastError());
+            ResetEvent(events[index]);
             break;
         default:
             CloseHandle(onEvent);
@@ -221,7 +221,7 @@ VOID SvcInit(DWORD dwArgc, LPTSTR* lpszArgv)
     // Initialize pretty much everything in the utilities
     bool result = RuntimeManager::initAllRuntimes();
     if(!result)
-        CLEAN_AND_EXIT(RuntimeManager::getUtilitiesRuntime()->getLastError(), NO_ERROR);
+        CLEAN_AND_EXIT(UtilitiesRuntime::getLastError(), NO_ERROR);
 
     ReportSvcStatus(SERVICE_START_PENDING, NO_ERROR, 0);
 
