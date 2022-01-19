@@ -1,5 +1,5 @@
 #include "ClientServerRuntime.h"
-unique_ptr<Runtime> ClientServerRuntime::Instance_ = nullptr;
+std::unique_ptr<Runtime> ClientServerRuntime::Instance_ = nullptr;
 
 ClientServerRuntime::~ClientServerRuntime()
 {
@@ -12,7 +12,7 @@ Runtime* ClientServerRuntime::getInstance()
 {
     if (Instance_.get() == nullptr)
     {
-        Instance_ = unique_ptr<Runtime>(new ClientServerRuntime);
+        Instance_ = std::unique_ptr<Runtime>(new ClientServerRuntime);
     }
     return Instance_.get();
 }
@@ -24,15 +24,15 @@ bool ClientServerRuntime::init()
         HANDLE serverRunningEvent = CreateEvent(NULL, TRUE, FALSE, L"ServerRunning");
         if (serverRunningEvent == NULL)
         {
-            UtilitiesRuntime::setLastError("Could not create Server Running event");
+            Utilities::setLastError("Could not create Server Running event");
             return false;
         }
 
-        ClientServerObjectThread_ = thread(&ClientServerRuntime::initServer, this);
+        ClientServerObjectThread_ = std::thread(&ClientServerRuntime::initServer, this);
         if (WaitForSingleObject(serverRunningEvent, 5000) == WAIT_TIMEOUT)
         {
             ClientServerObjectThread_.join();
-            UtilitiesRuntime::setLastError("Server running event timed out!");
+            Utilities::setLastError("Server running event timed out!");
             CloseHandle(serverRunningEvent);
             return false;
         }
@@ -43,15 +43,15 @@ bool ClientServerRuntime::init()
         HANDLE clientRunningEvent = CreateEvent(NULL, TRUE, FALSE, L"ClientRunning");
         if (clientRunningEvent == NULL)
         {
-            UtilitiesRuntime::setLastError("Could not create Client Running event");
+            Utilities::setLastError("Could not create Client Running event");
             return false;
         }
 
-        ClientServerObjectThread_ = thread(&ClientServerRuntime::initClient, this);
+        ClientServerObjectThread_ = std::thread(&ClientServerRuntime::initClient, this);
         if (WaitForSingleObject(clientRunningEvent, 5000) == WAIT_TIMEOUT)
         {
             ClientServerObjectThread_.join();
-            UtilitiesRuntime::setLastError("Client running event timed out!");
+            Utilities::setLastError("Client running event timed out!");
             CloseHandle(clientRunningEvent);
             return false;
         }
@@ -90,7 +90,7 @@ bool ClientServerRuntime::initServer()
         boost::asio::io_service io_service;
         tcp::endpoint endpoint(tcp::v4(), std::atoi(SERVICE_PORT));
         endpoint.address(boost::asio::ip::make_address(LocalIP_));
-        ClientServerObject_ = unique_ptr<ReadableClientServerObject>(new Server(io_service, endpoint));
+        ClientServerObject_ = std::unique_ptr<ReadableClientServerObject>(new Server(io_service, endpoint));
         HANDLE serverRunningEvent = OpenEvent(EVENT_ALL_ACCESS, FALSE, L"ServerRunning");
 
         if (serverRunningEvent != NULL) SetEvent(serverRunningEvent);
@@ -101,7 +101,7 @@ bool ClientServerRuntime::initServer()
         io_service.run();
     }
     catch (std::exception& e)
-        SET_ERROR_EXIT(string("Encountered an error while starting the server! Error: ") + e.what(), false);
+        SET_ERROR_EXIT(std::string("Encountered an error while starting the server! Error: ") + e.what(), false);
 
     return 0;
 
@@ -115,7 +115,7 @@ bool ClientServerRuntime::initClient()
         boost::asio::io_service io_service;
         tcp::resolver resolver(io_service);
         auto endpoint_iterator = resolver.resolve({ SERVER_IP_ADDRESS, SERVICE_PORT });
-        ClientServerObject_ = unique_ptr<ReadableClientServerObject>(new Client(io_service, endpoint_iterator, boost::asio::ip::host_name().c_str()));
+        ClientServerObject_ = std::unique_ptr<ReadableClientServerObject>(new Client(io_service, endpoint_iterator, boost::asio::ip::host_name().c_str()));
 
         if (clientRunningEvent != NULL) SetEvent(clientRunningEvent);
 
@@ -125,7 +125,7 @@ bool ClientServerRuntime::initClient()
         io_service.run();
     }
     catch (std::exception& e)
-        SET_ERROR_EXIT(string("Error Connecting client: ") + e.what(), 0);
+        SET_ERROR_EXIT(std::string("Error Connecting client: ") + e.what(), 0);
 
     return true;
 }

@@ -1,4 +1,5 @@
 #pragma once
+#include <SDKDDKVer.h>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>

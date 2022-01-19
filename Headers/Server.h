@@ -1,11 +1,11 @@
 #pragma once
+#include "Message.h"
 #include <deque>
 #include <list>
 #include <memory>
 #include <set>
 #include <utility>
 #include <boost/asio.hpp>
-#include "Message.h"
 #define MAX_RECENT_MESSAGES 100
 using boost::asio::ip::tcp;
 

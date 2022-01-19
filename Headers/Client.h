@@ -1,8 +1,8 @@
 #pragma once
+#include "Message.h"
 #include <cstdlib>
 #include <deque>
 #include <boost/asio.hpp>
-#include "Message.h"
 
 using boost::asio::ip::tcp;
 

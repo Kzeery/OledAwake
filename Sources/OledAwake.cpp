@@ -1,8 +1,7 @@
-#include <SDKDDKVer.h>
+#include "RuntimeManager.h"
+#include "ErrorMessages.h"
 #include <tchar.h>
 #include <strsafe.h>
-#include "ErrorMessages.h"
-#include "RuntimeManager.h"
 #include <vector>
 #include <Dbt.h>
 #pragma comment(lib, "advapi32.lib")
@@ -21,9 +20,9 @@ VOID WINAPI SvcMain(DWORD, LPTSTR*);
 
 VOID ReportSvcStatus(DWORD, DWORD, DWORD);
 VOID SvcInit(DWORD, LPTSTR*);
-VOID SvcReportInfo(wstring&);
+VOID SvcReportInfo(std::wstring&);
 VOID SvcReportEvent(LPTSTR);
-VOID SvcReportEvent(wstring&);
+VOID SvcReportEvent(std::wstring&);
 
 //
 // Purpose: 
@@ -168,7 +167,7 @@ VOID WINAPI SvcMain(DWORD dwArgc, LPTSTR* lpszArgv)
 
  unsigned __stdcall waitForMonitorOnEvent(void* p_userData)
 {
-    UtilitiesRuntime* utilities = RuntimeManager::getUtilitiesRuntime();
+    TVCommunicationRuntime* communications = RuntimeManager::getTVCommunicationRuntime();
     ClientServerRuntime* clientServerRuntime = RuntimeManager::getClientServerRuntime();
     HANDLE onEvent = CreateEvent(NULL, TRUE, FALSE, L"MonitorOn");
     HANDLE offEvent = CreateEvent(NULL, TRUE, FALSE, L"MonitorOff");
@@ -178,7 +177,7 @@ VOID WINAPI SvcMain(DWORD dwArgc, LPTSTR* lpszArgv)
     if (onEvent == NULL || offEvent == NULL || threadKillEvent == NULL) return 1;
     if (switchTo1Event == NULL || switchTo2Event == NULL) return 2;
 
-    vector<HANDLE> events = { onEvent, offEvent, switchTo1Event, switchTo2Event, threadKillEvent };
+    std::vector<HANDLE> events = { onEvent, offEvent, switchTo1Event, switchTo2Event, threadKillEvent };
     while (true)
     {
         DWORD waitRes = WaitForMultipleObjects(events.size(), events.data(), FALSE, INFINITE);
@@ -189,7 +188,7 @@ VOID WINAPI SvcMain(DWORD dwArgc, LPTSTR* lpszArgv)
             clientServerRuntime->setCurrentMonitorState(MonitorState::MONITOR_ON);
             for (int i = 0; i < 10; ++i)
             {
-                if (!utilities->turnOnDisplay()) SvcReportInfo(UtilitiesRuntime::getLastError());
+                if (!communications->turnOnDisplay()) SvcReportInfo(Utilities::getLastError());
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
             ResetEvent(events[index]);
@@ -197,17 +196,17 @@ VOID WINAPI SvcMain(DWORD dwArgc, LPTSTR* lpszArgv)
         case 1: // Turn monitor off
             clientServerRuntime->setCurrentMonitorState(MonitorState::MONITOR_OFF);
             if (clientServerRuntime->getOtherMonitorState() == MonitorState::MONITOR_OFF)
-                if (!utilities->turnOffDisplay()) SvcReportEvent(UtilitiesRuntime::getLastError());
+                if (!communications->turnOffDisplay()) SvcReportEvent(Utilities::getLastError());
             ResetEvent(events[index]);
             break;
         case 2: // Switch to HDMI 1
-            if (!utilities->switchInput(Inputs::HDMI1))
-                SvcReportEvent(UtilitiesRuntime::getLastError());
+            if (!communications->switchInput(Inputs::HDMI1))
+                SvcReportEvent(Utilities::getLastError());
             ResetEvent(events[index]);
             break;
         case 3: // Switch to HDMI 2
-            if (!utilities->switchInput(Inputs::HDMI2))
-                SvcReportEvent(UtilitiesRuntime::getLastError());
+            if (!communications->switchInput(Inputs::HDMI2))
+                SvcReportEvent(Utilities::getLastError());
             ResetEvent(events[index]);
             break;
         default:
@@ -244,7 +243,7 @@ VOID SvcInit(DWORD dwArgc, LPTSTR* lpszArgv)
     // Initialize pretty much everything in the utilities
     bool result = RuntimeManager::initAllRuntimes();
     if(!result)
-        CLEAN_AND_EXIT(UtilitiesRuntime::getLastError(), NO_ERROR);
+        CLEAN_AND_EXIT(Utilities::getLastError(), NO_ERROR);
 
     
     ReportSvcStatus(SERVICE_START_PENDING, NO_ERROR, 0);
@@ -271,11 +270,11 @@ VOID SvcInit(DWORD dwArgc, LPTSTR* lpszArgv)
     // Report running status when initialization is complete.
 
     ReportSvcStatus(SERVICE_RUNNING, NO_ERROR, 0);
-    this_thread::sleep_for(chrono::seconds(1));
+    std::this_thread::sleep_for(std::chrono::seconds(1));
     RuntimeManager::getClientServerRuntime()->setCurrentMonitorState(MonitorState::MONITOR_ON);
 
     // TO_DO: Perform work until service stops.
-    vector<HANDLE> stopEvents = { move(threadStopEvent), move(ghSvcStopEvent) };
+    std::vector<HANDLE> stopEvents = { threadStopEvent, ghSvcStopEvent };
 
     while (1)
     {
@@ -411,12 +410,12 @@ DWORD WINAPI SvcCtrlHandler(DWORD dwCtrl, DWORD dwEventType, LPVOID lpEventData,
 
 }
 
-VOID SvcReportInfo(wstring& error_message)
+VOID SvcReportInfo(std::wstring& error_message)
 {
     size_t sz = error_message.size() + 1;
     HANDLE hEventSource;
     LPCTSTR lpszStrings[2];
-    vector<TCHAR> Buffer(sz, 0);
+    std::vector<TCHAR> Buffer(sz, 0);
     hEventSource = RegisterEventSource(NULL, SVCNAME);
 
     if (NULL != hEventSource)
@@ -441,12 +440,12 @@ VOID SvcReportInfo(wstring& error_message)
 }
 
 
-VOID SvcReportEvent(wstring& error_message)
+VOID SvcReportEvent(std::wstring& error_message)
 {
     size_t sz = error_message.size() + 1;
     HANDLE hEventSource;
     LPCTSTR lpszStrings[2];
-    vector<TCHAR> Buffer(sz, 0);
+    std::vector<TCHAR> Buffer(sz, 0);
     hEventSource = RegisterEventSource(NULL, SVCNAME);
 
     if (NULL != hEventSource)
