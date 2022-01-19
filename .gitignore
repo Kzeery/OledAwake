@@ -6,3 +6,4 @@ Installer/x64*
 Installer/x86*
 *BuildMC*
 *.dll
+*.exe
