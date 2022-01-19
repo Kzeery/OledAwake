@@ -230,6 +230,7 @@ bool UtilitiesRuntime::turnOnDisplay() const
 
     iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
     if (iResult != NO_ERROR) {
+        LastError_ = "Failed WSAStartup";
         return false;
     }
     const char* SendBuf = MacBuffer_.c_str();
@@ -239,12 +240,14 @@ bool UtilitiesRuntime::turnOnDisplay() const
     SOCKET SendSocket = INVALID_SOCKET;
     SendSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (SendSocket == INVALID_SOCKET) {
+        LastError_ = "Failed to initialize socket";
         WSACleanup();
         return false;
     }
     BOOL val = true;
     if (setsockopt(SendSocket, SOL_SOCKET, SO_BROADCAST, (const char*)&val, sizeof(BOOL)) != 0)
     {
+        LastError_ = "Failed to set socket options";
         WSACleanup();
         return false;
     }
@@ -253,6 +256,7 @@ bool UtilitiesRuntime::turnOnDisplay() const
     iResult = InetPton(AF_INET, BROADCAST_ADDRESS, &RecvAddr.sin_addr.s_addr);
     if (iResult != 1)
     {
+        LastError_ = "Failed to convert IP string to address";
         WSACleanup();
         return false;
     }
@@ -260,6 +264,7 @@ bool UtilitiesRuntime::turnOnDisplay() const
     iResult = sendto(SendSocket,
         SendBuf, BufLen, 0, (SOCKADDR*)&RecvAddr, sizeof(RecvAddr));
     if (iResult == SOCKET_ERROR) {
+        LastError_ = "Failed to send socket";
         closesocket(SendSocket);
         WSACleanup();
         return false;
@@ -267,6 +272,7 @@ bool UtilitiesRuntime::turnOnDisplay() const
 
     iResult = closesocket(SendSocket);
     if (iResult == SOCKET_ERROR) {
+        LastError_ = "Failed to cleanup socket";
         WSACleanup();
         return false;
     }

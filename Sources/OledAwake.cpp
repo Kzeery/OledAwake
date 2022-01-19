@@ -19,6 +19,7 @@ VOID WINAPI SvcMain(DWORD, LPTSTR*);
 
 VOID ReportSvcStatus(DWORD, DWORD, DWORD);
 VOID SvcInit(DWORD, LPTSTR*);
+VOID SvcReportInfo(wstring&);
 VOID SvcReportEvent(LPTSTR);
 VOID SvcReportEvent(wstring&);
 
@@ -184,7 +185,7 @@ VOID WINAPI SvcMain(DWORD dwArgc, LPTSTR* lpszArgv)
             clientServerRuntime->setCurrentMonitorState(MonitorState::MONITOR_ON);
             for (int i = 0; i < 10; ++i)
             {
-                utilities->turnOnDisplay();
+                if (!utilities->turnOnDisplay()) SvcReportInfo(UtilitiesRuntime::getLastError());
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
             ResetEvent(events[index]);
@@ -258,6 +259,7 @@ VOID SvcInit(DWORD dwArgc, LPTSTR* lpszArgv)
         // Check whether to stop the service.
         
         DWORD res = WaitForMultipleObjects(stopEvents.size(), stopEvents.data(), FALSE, INFINITE) - WAIT_OBJECT_0;
+        RuntimeManager::getClientServerRuntime()->setCurrentMonitorState(MonitorState::MONITOR_OFF);
         switch (res)
         {
         case 0: // Monitoring Thread Stopped
@@ -354,6 +356,36 @@ DWORD WINAPI SvcCtrlHandler(DWORD dwCtrl, DWORD dwEventType, LPVOID lpEventData,
     return ERROR_CALL_NOT_IMPLEMENTED;
 
 }
+
+VOID SvcReportInfo(wstring& error_message)
+{
+    size_t sz = error_message.size() + 1;
+    HANDLE hEventSource;
+    LPCTSTR lpszStrings[2];
+    vector<TCHAR> Buffer(sz, 0);
+    hEventSource = RegisterEventSource(NULL, SVCNAME);
+
+    if (NULL != hEventSource)
+    {
+        memcpy(Buffer.data(), error_message.c_str(), sz * sizeof(wchar_t));
+
+        lpszStrings[0] = SVCNAME;
+        lpszStrings[1] = Buffer.data();
+
+        ReportEvent(hEventSource,        // event log handle
+            EVENTLOG_INFORMATION_TYPE, // event type
+            0,                   // event category
+            OLED_AWAKE_INFORMATION,           // event identifier
+            NULL,                // no security identifier
+            2,                   // size of lpszStrings array
+            0,                   // no binary data
+            lpszStrings,         // array of strings
+            NULL);               // no binary data
+
+        DeregisterEventSource(hEventSource);
+    }
+}
+
 
 VOID SvcReportEvent(wstring& error_message)
 {

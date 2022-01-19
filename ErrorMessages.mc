@@ -31,3 +31,11 @@ SymbolicName=OLED_AWAKE_WARNING
 Language=English
 %1 has issued a warning. The error message is: %2.
 .
+
+MessageId=0x2
+Severity=Informational
+Facility=Runtime
+SymbolicName=OLED_AWAKE_INFORMATION
+Language=English
+%1 log info (%2).
+.
