@@ -60,3 +60,12 @@
 //
 #define OLED_AWAKE_WARNING               ((DWORD)0x80020002L)
 
+//
+// MessageId: OLED_AWAKE_INFORMATION
+//
+// MessageText:
+//
+// %1 log info (%2).
+//
+#define OLED_AWAKE_INFORMATION           ((DWORD)0x40020002L)
+
