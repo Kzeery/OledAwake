@@ -1,9 +1,8 @@
 *.vs*
 *obj*
 *vcxproj*
-*Environment.h*
 x64/*
 Installer/x64*
 Installer/x86*
 *BuildMC*
-*.exe
+*.dll

@@ -1,7 +1,7 @@
 #pragma once
+#include "TVCommunicationRuntime.h"
 #include "Client.h"
 #include "Server.h"
-#include "UtilitiesRuntime.h"
 #include "Runtime.h"
 class ClientServerRuntime : public Runtime
 {
@@ -21,11 +21,13 @@ private:
     void sendMessageToClients(MonitorState& state);
 
 private:
-    unique_ptr<ReadableClientServerObject> ClientServerObject_;
+    std::unique_ptr<ReadableClientServerObject> ClientServerObject_;
     std::thread ClientServerObjectThread_;
     std::string LocalIP_;
     MonitorState State_;
-    static unique_ptr<Runtime> Instance_;
+    static std::unique_ptr<Runtime> Instance_;
 
 };
+
+
 

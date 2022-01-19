@@ -1,11 +1,11 @@
 #include "RuntimeManager.h"
-vector<GetRuntimeInstanceType> RuntimeManager::RuntimeVector_ = {};
+std::vector<GetRuntimeInstanceType> RuntimeManager::RuntimeVector_ = {};
 bool RuntimeManager::Initialized_ = false;
 bool RuntimeManager::initAllRuntimes()
 {
     if (Initialized_) return true;
 
-    RuntimeVector_.push_back(UtilitiesRuntime::getInstance);
+    RuntimeVector_.push_back(TVCommunicationRuntime::getInstance);
     RuntimeVector_.push_back(ClientServerRuntime::getInstance);
 
     for (const auto& runtime : RuntimeVector_)
@@ -15,11 +15,11 @@ bool RuntimeManager::initAllRuntimes()
     return true;
 }
 
-UtilitiesRuntime* RuntimeManager::getUtilitiesRuntime()
+TVCommunicationRuntime* RuntimeManager::getTVCommunicationRuntime()
 {
-    if (!initAllRuntimes()) throw std::exception("Cannot get Utilities Runtime!");
-    auto pRet = static_cast<UtilitiesRuntime*>(RuntimeVector_[RuntimeIndices::UtilitiesRuntimeIndex]());
-    if(pRet == nullptr) throw std::exception("Utilites Runtime is NULL!");
+    if (!initAllRuntimes()) throw std::exception("Cannot get TV Communication Runtime!");
+    auto pRet = static_cast<TVCommunicationRuntime*>(RuntimeVector_[RuntimeIndices::TVCommunicationRuntimeIndex]());
+    if(pRet == nullptr) throw std::exception("TV Communication is NULL!");
     return pRet;
 }
 
