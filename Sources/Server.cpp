@@ -1,24 +1,28 @@
 #include "Server.h"
+#include "Utilities.h"
+#include "RuntimeManager.h"
 void Room::join(ChatParticipant_ptr participant)
 {
     Participants_.insert(participant);
-    for (const auto& msg : recent_msgs_)
-        participant->deliver(msg);
+    int state = static_cast<int>(RuntimeManager::getClientServerRuntime()->getCurrentMonitorState());
+    Message msg(&state);
+    participant->deliver(msg);
+    
 }
 
 void Room::leave(ChatParticipant_ptr participant)
 {
     Participants_.erase(participant);
+    if (Participants_.size() == 0)
+    {
+        memset(OtherMessage_.getBody(), 0, BODY_LENGTH);
+    }
 }
 
 void Room::deliver(const Message& msg)
 {
     if (msg.getIdentifier() != Name_)
         OtherMessage_ = msg;
-
-    recent_msgs_.push_back(msg);
-    while (recent_msgs_.size() > MAX_RECENT_MESSAGES)
-        recent_msgs_.pop_front();
 
     for (auto participant : Participants_)
         participant->deliver(msg);
@@ -64,6 +68,8 @@ void Session::doReadIdentifier()
             else
             {
                 Room_.leave(shared_from_this());
+                Utilities::setLastError(std::string("Session doReadIdentifier encountered an error: ") + ec.message());
+
             }
         });
 }
@@ -82,6 +88,7 @@ void Session::doReadBody()
             else
             {
                 Room_.leave(shared_from_this());
+                Utilities::setLastError(std::string("Session doReadBody encountered an error: ") + ec.message());
             }
         });
 }
@@ -105,6 +112,8 @@ void Session::doWrite()
             else
             {
                 Room_.leave(shared_from_this());
+                Utilities::setLastError(std::string("Session doWrite encountered an error: ") + ec.message());
+
             }
         });
 }
@@ -132,7 +141,10 @@ void Server::doAccept()
     Acceptor_.async_accept(Socket_,
         [this](boost::system::error_code ec)
         {
-            if (ec) return;
+            if (ec) {
+                Utilities::setLastError(std::string("Server doAccept encountered an error: ") + ec.message());
+                return;
+            }
 
             std::make_shared<Session>(std::move(Socket_), Room_)->start();
             doAccept();

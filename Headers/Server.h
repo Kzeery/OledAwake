@@ -10,7 +10,6 @@
 using boost::asio::ip::tcp;
 
 //----------------------------------------------------------------------
-
 typedef std::deque<Message> Message_queue;
 
 //----------------------------------------------------------------------
@@ -41,7 +40,7 @@ public:
 
 private:
     std::set<ChatParticipant_ptr> Participants_;
-    Message_queue recent_msgs_;
+    Message CurrentState_;
     Message OtherMessage_;
     std::string Name_;
 };

@@ -12,7 +12,7 @@ SERVICE_STATUS          gSvcStatus;
 SERVICE_STATUS_HANDLE   gSvcStatusHandle;
 HANDLE                  ghSvcStopEvent = NULL;
 GUID MouseDeviceGUID = { 0x378de44c, 0x56ef, 0x11d1,
-             0xbc, 0x8c, 0x00, 0xa0, 0xc9, 0x14, 0x05, 0xdd };
+0xbc, 0x8c, 0x00, 0xa0, 0xc9, 0x14, 0x05, 0xdd };
 std::wstring MouseDeviceName = L"\\\\?\\HID#VID_046D&PID_C539&MI_01&Col01#b&edd03df&0&0000#{378de44c-56ef-11d1-bc8c-00a0c91405dd}";
 VOID SvcInstall(void);
 DWORD WINAPI SvcCtrlHandler(DWORD, DWORD, LPVOID, LPVOID);
@@ -81,7 +81,6 @@ VOID SvcInstall()
         printf("Cannot install service (%d)\n", GetLastError());
         return;
     }
-
     // Get a handle to the SCM database. 
 
     schSCManager = OpenSCManager(
@@ -111,7 +110,6 @@ VOID SvcInstall()
         NULL,                      // no dependencies 
         NULL,                      // LocalSystem account 
         NULL);                     // no password 
-
     if (schService == NULL)
     {
         printf("CreateService failed (%d)\n", GetLastError());
@@ -154,7 +152,7 @@ VOID WINAPI SvcMain(DWORD dwArgc, LPTSTR* lpszArgv)
 
     gSvcStatus.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
     gSvcStatus.dwServiceSpecificExitCode = 0;
-
+    gSvcStatus.dwControlsAccepted |= SERVICE_CONTROL_PRESHUTDOWN;
     // Report initial status to the SCM
 
     ReportSvcStatus(SERVICE_START_PENDING, NO_ERROR, 3000);
@@ -165,49 +163,62 @@ VOID WINAPI SvcMain(DWORD dwArgc, LPTSTR* lpszArgv)
 }
 
 
- unsigned __stdcall waitForMonitorOnEvent(void* p_userData)
+ unsigned __stdcall eventHandler(void* p_userData)
 {
     TVCommunicationRuntime* communications = RuntimeManager::getTVCommunicationRuntime();
     ClientServerRuntime* clientServerRuntime = RuntimeManager::getClientServerRuntime();
-    HANDLE onEvent = CreateEvent(NULL, TRUE, FALSE, L"MonitorOn");
-    HANDLE offEvent = CreateEvent(NULL, TRUE, FALSE, L"MonitorOff");
-    HANDLE switchTo1Event = CreateEvent(NULL, TRUE, FALSE, L"SwitchToHDMI1");
-    HANDLE switchTo2Event = CreateEvent(NULL, TRUE, FALSE, L"SwitchToHDMI2");
-    HANDLE threadKillEvent = CreateEvent(NULL, TRUE, FALSE, L"KillMonitorThread");
-    if (onEvent == NULL || offEvent == NULL || threadKillEvent == NULL) return 1;
-    if (switchTo1Event == NULL || switchTo2Event == NULL) return 2;
+    std::vector<HANDLE> events;
+    for (const auto& eventName : Utilities::eventNames)
+    {
+        HANDLE event = CreateEvent(NULL, TRUE, FALSE, eventName);
+        if (!event)
+        {
+            for (const auto& createdEvent : events)
+                CloseHandle(event);
+            _endthreadex(1);
+            return 1;
+        }
+        events.push_back(event);
+    }
 
-    std::vector<HANDLE> events = { onEvent, offEvent, switchTo1Event, switchTo2Event, threadKillEvent };
     while (true)
     {
         DWORD waitRes = WaitForMultipleObjects(events.size(), events.data(), FALSE, INFINITE);
         DWORD index = waitRes - WAIT_OBJECT_0;
         switch (index)
         {
-        case 0: // Turn monitor on
+        case MONITOR_ON_EVENT_INDEX: // Turn monitor on
             clientServerRuntime->setCurrentMonitorState(MonitorState::MONITOR_ON);
             for (int i = 0; i < 10; ++i)
             {
                 if (!communications->turnOnDisplay()) SvcReportInfo(Utilities::getLastError());
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                std::this_thread::sleep_for(std::chrono::milliseconds(25));
             }
-            ResetEvent(events[index]);
             break;
-        case 1: // Turn monitor off
+        case MONITOR_OFF_EVENT_INDEX: // Turn monitor off
             clientServerRuntime->setCurrentMonitorState(MonitorState::MONITOR_OFF);
             if (clientServerRuntime->getOtherMonitorState() == MonitorState::MONITOR_OFF)
                 if (!communications->turnOffDisplay()) SvcReportEvent(Utilities::getLastError());
-            ResetEvent(events[index]);
             break;
-        case 2: // Switch to HDMI 1
+        case CLIENT_SERVER_EXITED_EVENT_INDEX: // Client/server thread exited
+        {
+            int i = 0;
+            for (; i < 20; ++i) // Try to reconnect for a maximum of 10 mins
+            {
+                SvcReportEvent(Utilities::getLastError());
+                if (WaitForSingleObject(events[KILL_MONITOR_THREAD_INDEX], 30000) != WAIT_TIMEOUT
+                    || clientServerRuntime->cleanUpAndReconnect())
+                    break;
+            }
+            if (i < 20) break;
+        }
+        case SWITCH_HDMI1_EVENT_INDEX: // Switch to HDMI 1
             if (!communications->switchInput(Inputs::HDMI1))
                 SvcReportEvent(Utilities::getLastError());
-            ResetEvent(events[index]);
             break;
-        case 3: // Switch to HDMI 2
+        case SWITCH_HDMI2_EVENT_INDEX: // Switch to HDMI 2
             if (!communications->switchInput(Inputs::HDMI2))
                 SvcReportEvent(Utilities::getLastError());
-            ResetEvent(events[index]);
             break;
         default:
             for (auto& event : events)
@@ -216,8 +227,11 @@ VOID WINAPI SvcMain(DWORD dwArgc, LPTSTR* lpszArgv)
             _endthreadex(0);
             return 0;
         }
+        ResetEvent(events[index]);
     }
 }
+
+ 
 
 #define CLEAN_RESOURCES(msg, code) SvcReportEvent(msg); ReportSvcStatus(SERVICE_STOPPED, code, 0); if(powerNotifyHandle) UnregisterPowerSettingNotification(powerNotifyHandle); if(deviceNotifyHandle) UnregisterPowerSettingNotification(deviceNotifyHandle);
 #define CLEAN_AND_EXIT(msg, code) { CLEAN_RESOURCES(msg, code); return; }
@@ -257,7 +271,7 @@ VOID SvcInit(DWORD dwArgc, LPTSTR* lpszArgv)
     if (ghSvcStopEvent == NULL)
         CLEAN_AND_EXIT(TEXT("CreateghSvcStopEvent"), ERROR_TIMEOUT);
 
-    uintptr_t TSE = _beginthreadex(NULL, 0, &waitForMonitorOnEvent, nullptr, 0, NULL);
+    uintptr_t TSE = _beginthreadex(NULL, 0, &eventHandler, nullptr, 0, NULL);
     
     if (TSE == -1L)
     {
@@ -289,7 +303,7 @@ VOID SvcInit(DWORD dwArgc, LPTSTR* lpszArgv)
             break;
         default: // Received Stop Event from Windows, need to stop the monitoring thread
             ReportSvcStatus(SERVICE_STOPPED, NO_ERROR, 0);
-            HANDLE threadKillEvent = OpenEvent(EVENT_ALL_ACCESS, FALSE, L"KillMonitorThread");
+            HANDLE threadKillEvent = OpenEvent(EVENT_ALL_ACCESS, FALSE, Utilities::eventNames[KILL_MONITOR_THREAD_INDEX]);
             if (threadKillEvent != NULL)
             {
                 SetEvent(threadKillEvent);
@@ -353,10 +367,10 @@ DWORD WINAPI SvcCtrlHandler(DWORD dwCtrl, DWORD dwEventType, LPVOID lpEventData,
         switch (static_cast<MonitorState>(*pbs->Data))
         {
         case MonitorState::MONITOR_ON:
-            eventName = L"MonitorOn";
+            eventName = Utilities::eventNames[MONITOR_ON_EVENT_INDEX];
             break;
         case MonitorState::MONITOR_OFF:
-            eventName = L"MonitorOff";
+            eventName = Utilities::eventNames[MONITOR_OFF_EVENT_INDEX];
             break;
         default:
             break;
@@ -378,13 +392,13 @@ DWORD WINAPI SvcCtrlHandler(DWORD dwCtrl, DWORD dwEventType, LPVOID lpEventData,
         {
         case DBT_DEVICEARRIVAL:
             if (deviceInfo->dbcc_name == MouseDeviceName)
-                eventName = L"SwitchToHDMI1";
+                eventName = Utilities::eventNames[SWITCH_HDMI1_EVENT_INDEX];
             break;
 
 
         case DBT_DEVICEREMOVECOMPLETE:
             if (deviceInfo->dbcc_name == MouseDeviceName)
-                eventName = L"SwitchToHDMI2";
+                eventName = Utilities::eventNames[SWITCH_HDMI2_EVENT_INDEX];
             break;
         default:
             break;
@@ -400,6 +414,15 @@ DWORD WINAPI SvcCtrlHandler(DWORD dwCtrl, DWORD dwEventType, LPVOID lpEventData,
         return NO_ERROR;
 
     }
+    case SERVICE_CONTROL_PRESHUTDOWN:
+        ReportSvcStatus(SERVICE_STOP_PENDING, NO_ERROR, 0);
+
+        // Signal the service to stop.
+
+        SetEvent(ghSvcStopEvent);
+        ReportSvcStatus(gSvcStatus.dwCurrentState, NO_ERROR, 0);
+        return NO_ERROR;
+        break;
     case SERVICE_CONTROL_INTERROGATE:
         return NO_ERROR;
         break;
