@@ -3,6 +3,13 @@
 #include <codecvt>
 #include <locale>
 std::string Utilities::LastError_ = "";
+std::vector<wchar_t*> Utilities::eventNames = 
+{
+    L"MonitorOn",
+    L"MonitorOff",
+    L"ClientServerExitedThread",
+    L"KillMonitorThread"
+};
 std::wstring Utilities::getLastError()
 {
     std::wstring ret = widen(LastError_);

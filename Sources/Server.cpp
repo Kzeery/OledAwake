@@ -1,4 +1,5 @@
 #include "Server.h"
+#include "Utilities.h"
 void Room::join(ChatParticipant_ptr participant)
 {
     Participants_.insert(participant);
@@ -64,6 +65,8 @@ void Session::doReadIdentifier()
             else
             {
                 Room_.leave(shared_from_this());
+                Utilities::setLastError(std::string("Session doReadIdentifier encountered an error: ") + ec.message());
+
             }
         });
 }
@@ -82,6 +85,7 @@ void Session::doReadBody()
             else
             {
                 Room_.leave(shared_from_this());
+                Utilities::setLastError(std::string("Session doReadBody encountered an error: ") + ec.message());
             }
         });
 }
@@ -105,6 +109,8 @@ void Session::doWrite()
             else
             {
                 Room_.leave(shared_from_this());
+                Utilities::setLastError(std::string("Session doWrite encountered an error: ") + ec.message());
+
             }
         });
 }
@@ -132,7 +138,10 @@ void Server::doAccept()
     Acceptor_.async_accept(Socket_,
         [this](boost::system::error_code ec)
         {
-            if (ec) return;
+            if (ec) {
+                Utilities::setLastError(std::string("Server doAccept encountered an error: ") + ec.message());
+                return;
+            }
 
             std::make_shared<Session>(std::move(Socket_), Room_)->start();
             doAccept();

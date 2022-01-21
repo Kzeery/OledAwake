@@ -3,9 +3,11 @@ std::unique_ptr<Runtime> ClientServerRuntime::Instance_ = nullptr;
 
 ClientServerRuntime::~ClientServerRuntime()
 {
-    ClientServerObject_->close();
-    if (ClientServerObjectThread_.joinable()) 
-        ClientServerObjectThread_.join();
+    if (ClientServerObjectThread_ != nullptr && ClientServerObjectThread_->joinable())
+    {
+        ClientServerObject_->close();
+        ClientServerObjectThread_->join();
+    }
 }
 
 Runtime* ClientServerRuntime::getInstance()
@@ -28,15 +30,16 @@ bool ClientServerRuntime::init()
             return false;
         }
 
-        ClientServerObjectThread_ = std::thread(&ClientServerRuntime::initServer, this);
+        ClientServerObjectThread_ = std::unique_ptr<std::thread>(new std::thread(&ClientServerRuntime::initServer, this));
         if (WaitForSingleObject(serverRunningEvent, 5000) == WAIT_TIMEOUT)
         {
-            ClientServerObjectThread_.join();
+            ClientServerObjectThread_->join();
+            ClientServerObjectThread_.reset(nullptr);
             Utilities::setLastError("Server running event timed out!");
             CloseHandle(serverRunningEvent);
             return false;
         }
-
+        CloseHandle(serverRunningEvent);
     }
     else
     {
@@ -47,14 +50,16 @@ bool ClientServerRuntime::init()
             return false;
         }
 
-        ClientServerObjectThread_ = std::thread(&ClientServerRuntime::initClient, this);
+        ClientServerObjectThread_ = std::unique_ptr<std::thread>(new std::thread(&ClientServerRuntime::initClient, this));
         if (WaitForSingleObject(clientRunningEvent, 5000) == WAIT_TIMEOUT)
         {
-            ClientServerObjectThread_.join();
+            ClientServerObjectThread_->join();
+            ClientServerObjectThread_.reset(nullptr);
             Utilities::setLastError("Client running event timed out!");
             CloseHandle(clientRunningEvent);
             return false;
         }
+        CloseHandle(clientRunningEvent);
     }
     return true;
 }
@@ -99,6 +104,11 @@ bool ClientServerRuntime::initServer()
 
         CloseHandle(serverRunningEvent);
         io_service.run();
+        ClientServerObject_.reset(nullptr);
+        HANDLE serverExitedEvent = OpenEvent(EVENT_ALL_ACCESS, FALSE, Utilities::eventNames[CLIENT_SERVER_EXITED_EVENT_INDEX]);
+        if (!serverExitedEvent) throw std::exception("CRITICAL: COULD NOT OPEN SERVER EXITED EVENT");
+        SetEvent(serverExitedEvent);
+        CloseHandle(serverExitedEvent);
     }
     catch (std::exception& e)
         SET_ERROR_EXIT(std::string("Encountered an error while starting the server! Error: ") + e.what(), false);
@@ -123,6 +133,11 @@ bool ClientServerRuntime::initClient()
 
         CloseHandle(clientRunningEvent);
         io_service.run();
+        ClientServerObject_.reset(nullptr);
+        HANDLE clientExitedEvent = OpenEvent(EVENT_ALL_ACCESS, FALSE, Utilities::eventNames[CLIENT_SERVER_EXITED_EVENT_INDEX]);
+        if (!clientExitedEvent) throw std::exception("CRITICAL: COULD NOT OPEN CLIENT EXITED EVENT");
+        SetEvent(clientExitedEvent);
+        CloseHandle(clientExitedEvent);
     }
     catch (std::exception& e)
         SET_ERROR_EXIT(std::string("Error Connecting client: ") + e.what(), 0);
@@ -132,7 +147,17 @@ bool ClientServerRuntime::initClient()
 
 void ClientServerRuntime::sendMessageToClients(MonitorState& state)
 {
-    Message msg(&state);
-    ClientServerObject_->getOtherState();
+    int intState = static_cast<int>(state);
+    Message msg(&intState);
     return ClientServerObject_->write(msg);
+}
+
+bool ClientServerRuntime::cleanUpAndReconnect()
+{
+    if (ClientServerObjectThread_ != nullptr && ClientServerObjectThread_->joinable())
+    {
+        ClientServerObjectThread_->join();
+        ClientServerObjectThread_.reset(nullptr);
+    }
+    return init();
 }

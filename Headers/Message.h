@@ -28,7 +28,7 @@ public:
         setIdentifier(boost::asio::ip::host_name());
     }
 
-    Message(void* messageBody) :  Data_(std::vector<char>(MAX_MESSAGE_LENGTH, 0))
+    Message(int* messageBody) :  Data_(std::vector<char>(MAX_MESSAGE_LENGTH, 0))
     {
         std::memcpy(BODY_PTR, messageBody, BODY_LENGTH);
         setIdentifier(boost::asio::ip::host_name());

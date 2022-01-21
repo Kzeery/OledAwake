@@ -1,4 +1,5 @@
 #include "Client.h"
+#include "Utilities.h"
 Client::Client(boost::asio::io_service& io_service,
     tcp::resolver::iterator endpoint_iterator,
     const char* name) : IO_Service_(io_service),
@@ -40,9 +41,9 @@ void Client::doConnect(tcp::resolver::iterator endpoint_iterator)
         [this](boost::system::error_code ec, tcp::resolver::iterator)
         {
             if (!ec)
-            {
                 doReadIdentifier();
-            }
+            else
+                Utilities::setLastError(std::string("doConnect has failed with error: ") + ec.message());
         });
 }
 
@@ -59,6 +60,8 @@ void Client::doReadIdentifier()
             else
             {
                 Socket_.close();
+                Utilities::setLastError(std::string("doReadIdentifier has exited with error: ") + ec.message());
+
             }
         });
 }
@@ -78,6 +81,8 @@ void Client::doReadBody()
             else
             {
                 Socket_.close();
+                Utilities::setLastError(std::string("doReadBody has exited with error: ") + ec.message());
+
             }
         });
 }
@@ -100,6 +105,8 @@ void Client::doWrite()
             else
             {
                 Socket_.close();
+                Utilities::setLastError(std::string("doWrite has exited with error: ") + ec.message());
+
             }
         });
 }

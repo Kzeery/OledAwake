@@ -161,37 +161,54 @@ VOID WINAPI SvcMain(DWORD dwArgc, LPTSTR* lpszArgv)
 }
 
 
- unsigned __stdcall waitForMonitorOnEvent(void* p_userData)
+ unsigned __stdcall eventHandler(void* p_userData)
 {
     TVCommunicationRuntime* communications = RuntimeManager::getTVCommunicationRuntime();
     ClientServerRuntime* clientServerRuntime = RuntimeManager::getClientServerRuntime();
-    HANDLE onEvent = CreateEvent(NULL, TRUE, FALSE, L"MonitorOn");
-    HANDLE offEvent = CreateEvent(NULL, TRUE, FALSE, L"MonitorOff");
-    HANDLE threadKillEvent = CreateEvent(NULL, TRUE, FALSE, L"KillMonitorThread");
-    if (onEvent == NULL || offEvent == NULL || threadKillEvent == NULL) return 1;
+    std::vector<HANDLE> events;
+    for (const auto& eventName : Utilities::eventNames)
+    {
+        HANDLE event = CreateEvent(NULL, TRUE, FALSE, eventName);
+        if (!event)
+        {
+            for (const auto& createdEvent : events)
+                CloseHandle(event);
+            _endthreadex(1);
+            return 1;
+        }
+        events.push_back(event);
+    }
 
-    std::vector<HANDLE> events = { onEvent, offEvent, threadKillEvent };
     while (true)
     {
         DWORD waitRes = WaitForMultipleObjects(events.size(), events.data(), FALSE, INFINITE);
         DWORD index = waitRes - WAIT_OBJECT_0;
         switch (index)
         {
-        case 0: // Turn monitor on
+        case MONITOR_ON_EVENT_INDEX: // Turn monitor on
             clientServerRuntime->setCurrentMonitorState(MonitorState::MONITOR_ON);
             for (int i = 0; i < 10; ++i)
             {
                 if (!communications->turnOnDisplay()) SvcReportInfo(Utilities::getLastError());
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                std::this_thread::sleep_for(std::chrono::milliseconds(25));
             }
-            ResetEvent(events[index]);
             break;
-        case 1: // Turn monitor off
+        case MONITOR_OFF_EVENT_INDEX: // Turn monitor off
             clientServerRuntime->setCurrentMonitorState(MonitorState::MONITOR_OFF);
             if (clientServerRuntime->getOtherMonitorState() == MonitorState::MONITOR_OFF)
                 if (!communications->turnOffDisplay()) SvcReportEvent(Utilities::getLastError());
-            ResetEvent(events[index]);
             break;
+        case CLIENT_SERVER_EXITED_EVENT_INDEX: // Client/server thread exited
+        {
+            int i = 0;
+            for (; i < 20; ++i) // Try to reconnect for a maximum of 10 mins
+            {
+                SvcReportEvent(Utilities::getLastError());
+                std::this_thread::sleep_for(std::chrono::seconds(30));
+                if (clientServerRuntime->cleanUpAndReconnect()) break;
+            }
+            if (i < 20) break;
+        }
         default:
             for (auto& event : events)
                 CloseHandle(event);
@@ -199,6 +216,7 @@ VOID WINAPI SvcMain(DWORD dwArgc, LPTSTR* lpszArgv)
             _endthreadex(0);
             return 0;
         }
+        ResetEvent(events[index]);
     }
 }
 
@@ -232,7 +250,7 @@ VOID SvcInit(DWORD dwArgc, LPTSTR* lpszArgv)
     if (ghSvcStopEvent == NULL)
         CLEAN_AND_EXIT(TEXT("CreateghSvcStopEvent"), ERROR_TIMEOUT);
 
-    uintptr_t TSE = _beginthreadex(NULL, 0, &waitForMonitorOnEvent, nullptr, 0, NULL);
+    uintptr_t TSE = _beginthreadex(NULL, 0, &eventHandler, nullptr, 0, NULL);
     
     if (TSE == -1L)
     {
@@ -264,7 +282,7 @@ VOID SvcInit(DWORD dwArgc, LPTSTR* lpszArgv)
             break;
         default: // Received Stop Event from Windows, need to stop the monitoring thread
             ReportSvcStatus(SERVICE_STOPPED, NO_ERROR, 0);
-            HANDLE threadKillEvent = OpenEvent(EVENT_ALL_ACCESS, FALSE, L"KillMonitorThread");
+            HANDLE threadKillEvent = OpenEvent(EVENT_ALL_ACCESS, FALSE, Utilities::eventNames[KILL_MONITOR_THREAD_INDEX]);
             if (threadKillEvent != NULL)
             {
                 SetEvent(threadKillEvent);
@@ -328,10 +346,10 @@ DWORD WINAPI SvcCtrlHandler(DWORD dwCtrl, DWORD dwEventType, LPVOID lpEventData,
         switch (static_cast<MonitorState>(*pbs->Data))
         {
         case MonitorState::MONITOR_ON:
-            eventName = L"MonitorOn";
+            eventName = Utilities::eventNames[MONITOR_ON_EVENT_INDEX];
             break;
         case MonitorState::MONITOR_OFF:
-            eventName = L"MonitorOff";
+            eventName = Utilities::eventNames[MONITOR_OFF_EVENT_INDEX];
             break;
         default:
             break;
