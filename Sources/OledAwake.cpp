@@ -150,7 +150,7 @@ VOID WINAPI SvcMain(DWORD dwArgc, LPTSTR* lpszArgv)
 
     gSvcStatus.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
     gSvcStatus.dwServiceSpecificExitCode = 0;
-
+    gSvcStatus.dwControlsAccepted |= SERVICE_CONTROL_PRESHUTDOWN;
     // Report initial status to the SCM
 
     ReportSvcStatus(SERVICE_START_PENDING, NO_ERROR, 3000);
@@ -204,8 +204,9 @@ VOID WINAPI SvcMain(DWORD dwArgc, LPTSTR* lpszArgv)
             for (; i < 20; ++i) // Try to reconnect for a maximum of 10 mins
             {
                 SvcReportEvent(Utilities::getLastError());
-                std::this_thread::sleep_for(std::chrono::seconds(30));
-                if (clientServerRuntime->cleanUpAndReconnect()) break;
+                if (WaitForSingleObject(events[KILL_MONITOR_THREAD_INDEX], 30000) != WAIT_TIMEOUT
+                    || clientServerRuntime->cleanUpAndReconnect())
+                    break;
             }
             if (i < 20) break;
         }
@@ -364,7 +365,15 @@ DWORD WINAPI SvcCtrlHandler(DWORD dwCtrl, DWORD dwEventType, LPVOID lpEventData,
 
         return NO_ERROR;
     }
-   
+    case SERVICE_CONTROL_PRESHUTDOWN:
+        ReportSvcStatus(SERVICE_STOP_PENDING, NO_ERROR, 0);
+
+        // Signal the service to stop.
+
+        SetEvent(ghSvcStopEvent);
+        ReportSvcStatus(gSvcStatus.dwCurrentState, NO_ERROR, 0);
+        return NO_ERROR;
+        break;
     case SERVICE_CONTROL_INTERROGATE:
         return NO_ERROR;
         break;
