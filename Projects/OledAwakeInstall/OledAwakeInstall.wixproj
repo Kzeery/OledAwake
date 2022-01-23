@@ -21,26 +21,34 @@
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|x64' ">
     <DefineConstants>Debug;arch64</DefineConstants>
-    <OutputPath>$(Platform)\$(Configuration)\</OutputPath>
-    <IntermediateOutputPath>obj\$(Configuration)\$(Platform)\</IntermediateOutputPath>
+    <OutputPath>$(SolutionDir)build\$(Configuration)\</OutputPath>
+    <IntermediateOutputPath>$(Configuration)\$(Platform)\</IntermediateOutputPath>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|x64' ">
-    <OutputPath>$(Platform)\$(Configuration)\</OutputPath>
-    <IntermediateOutputPath>obj\$(Configuration)\$(Platform)\</IntermediateOutputPath>
+    <OutputPath>$(SolutionDir)build\$(Configuration)\</OutputPath>
+    <IntermediateOutputPath>$(Configuration)\$(Platform)\</IntermediateOutputPath>
     <SuppressPdbOutput>true</SuppressPdbOutput>
     <DefineConstants>arch64</DefineConstants>
+    <PostBuildEvent>copy /Y "$(OutputPath)$(OutputName).msi" "$(SolutionDir)installer\$(OutputName).msi"</PostBuildEvent>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="Product.wxs" />
+    <Compile Include="src/Product.wxs" />
   </ItemGroup>
   <ItemGroup>
+    <WixExtension Include="WixUtilExtension">
+      <HintPath>$(WixExtDir)\WixUtilExtension.dll</HintPath>
+      <Name>WixUtilExtension</Name>
+    </WixExtension>
     <WixExtension Include="WixUIExtension">
       <HintPath>$(WixExtDir)\WixUIExtension.dll</HintPath>
       <Name>WixUIExtension</Name>
     </WixExtension>
   </ItemGroup>
   <ItemGroup>
-    <Content Include="Includes.wxi" />
+    <Content Include="src/Includes.wxi" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="src\" />
   </ItemGroup>
   <Import Project="$(WixTargetsPath)" Condition=" '$(WixTargetsPath)' != '' " />
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\WiX\v3.x\Wix.targets" Condition=" '$(WixTargetsPath)' == '' AND Exists('$(MSBuildExtensionsPath32)\Microsoft\WiX\v3.x\Wix.targets') " />

@@ -4,10 +4,12 @@
 #include <strsafe.h>
 #include <vector>
 #include <Dbt.h>
+#include <PipeCommunication.h>
 #pragma comment(lib, "advapi32.lib")
 
 #define SVCNAME TEXT("OledAwake")
-
+HDEVNOTIFY deviceNotifyHandle = nullptr;
+HPOWERNOTIFY powerNotifyHandle = nullptr;
 SERVICE_STATUS          gSvcStatus;
 SERVICE_STATUS_HANDLE   gSvcStatusHandle;
 HANDLE                  ghSvcStopEvent = NULL;
@@ -23,7 +25,6 @@ VOID SvcInit(DWORD, LPTSTR*);
 VOID SvcReportInfo(std::wstring&);
 VOID SvcReportEvent(LPTSTR);
 VOID SvcReportEvent(std::wstring&);
-
 //
 // Purpose: 
 //   Entry point for the process
@@ -231,18 +232,23 @@ VOID WINAPI SvcMain(DWORD dwArgc, LPTSTR* lpszArgv)
     }
 }
 
- 
+ void cleanResources()
+ {
+     if (powerNotifyHandle)
+         UnregisterPowerSettingNotification(powerNotifyHandle);
+     if (deviceNotifyHandle)
+         UnregisterPowerSettingNotification(deviceNotifyHandle);
+     ReportSvcStatus(SERVICE_STOPPED, NO_ERROR, 0);
+ }
 
-#define CLEAN_RESOURCES(msg, code) SvcReportEvent(msg); ReportSvcStatus(SERVICE_STOPPED, code, 0); if(powerNotifyHandle) UnregisterPowerSettingNotification(powerNotifyHandle); if(deviceNotifyHandle) UnregisterPowerSettingNotification(deviceNotifyHandle);
-#define CLEAN_AND_EXIT(msg, code) { CLEAN_RESOURCES(msg, code); return; }
+#define CLEAN_AND_EXIT(msg) {  SvcReportEvent(msg); cleanResources(); return; }
 
 VOID SvcInit(DWORD dwArgc, LPTSTR* lpszArgv)
 {
-    HDEVNOTIFY deviceNotifyHandle = nullptr;
-    // Register for power events
-    HPOWERNOTIFY powerNotifyHandle = RegisterPowerSettingNotification(gSvcStatusHandle, &GUID_CONSOLE_DISPLAY_STATE, DEVICE_NOTIFY_SERVICE_HANDLE);
+
+    powerNotifyHandle = RegisterPowerSettingNotification(gSvcStatusHandle, &GUID_CONSOLE_DISPLAY_STATE, DEVICE_NOTIFY_SERVICE_HANDLE);
     if (powerNotifyHandle == NULL)
-        CLEAN_AND_EXIT(TEXT("RegisterPowerSettingNotification"), NO_ERROR);
+        CLEAN_AND_EXIT(TEXT("RegisterPowerSettingNotification"));
 
     DEV_BROADCAST_DEVICEINTERFACE NotificationFilter;
     ZeroMemory(&NotificationFilter, sizeof(NotificationFilter));
@@ -251,14 +257,14 @@ VOID SvcInit(DWORD dwArgc, LPTSTR* lpszArgv)
     NotificationFilter.dbcc_classguid = MouseDeviceGUID;
     deviceNotifyHandle = RegisterDeviceNotification(gSvcStatusHandle, &NotificationFilter, DEVICE_NOTIFY_SERVICE_HANDLE);
     if (deviceNotifyHandle == NULL)
-        CLEAN_AND_EXIT(TEXT("RegisterDeviceNotifiaction"), NO_ERROR);
+        CLEAN_AND_EXIT(TEXT("RegisterDeviceNotifiaction"));
 
     ReportSvcStatus(SERVICE_START_PENDING, NO_ERROR, 0);
     // Initialize pretty much everything in the utilities
     bool result = RuntimeManager::initAllRuntimes();
     if(!result)
-        CLEAN_AND_EXIT(Utilities::getLastError(), NO_ERROR);
-
+        CLEAN_AND_EXIT(Utilities::getLastError());
+    
     
     ReportSvcStatus(SERVICE_START_PENDING, NO_ERROR, 0);
 
@@ -269,14 +275,14 @@ VOID SvcInit(DWORD dwArgc, LPTSTR* lpszArgv)
         NULL);   // no name
 
     if (ghSvcStopEvent == NULL)
-        CLEAN_AND_EXIT(TEXT("CreateghSvcStopEvent"), ERROR_TIMEOUT);
+        CLEAN_AND_EXIT(TEXT("CreateghSvcStopEvent"));
 
     uintptr_t TSE = _beginthreadex(NULL, 0, &eventHandler, nullptr, 0, NULL);
     
     if (TSE == -1L)
     {
         CloseHandle(ghSvcStopEvent);
-        CLEAN_AND_EXIT(TEXT("BeginMonitorThread"), ERROR_TIMEOUT);
+        CLEAN_AND_EXIT(TEXT("BeginMonitorThread"));
     }
 
     HANDLE threadStopEvent = (HANDLE)TSE;
@@ -312,9 +318,9 @@ VOID SvcInit(DWORD dwArgc, LPTSTR* lpszArgv)
             }
 
         }
-        UnregisterPowerSettingNotification(powerNotifyHandle);
         for (const auto& event : stopEvents)
             if (event != NULL) CloseHandle(event);
+        cleanResources();
 
         return;
     }
@@ -345,7 +351,7 @@ VOID ReportSvcStatus(DWORD dwCurrentState,
     SetServiceStatus(gSvcStatusHandle, &gSvcStatus);
 }
 
-
+bool DisplayTurnedOffByService = false;
 DWORD WINAPI SvcCtrlHandler(DWORD dwCtrl, DWORD dwEventType, LPVOID lpEventData, LPVOID lpContext)
 {
     // Handle the requested control code. 
@@ -363,13 +369,44 @@ DWORD WINAPI SvcCtrlHandler(DWORD dwCtrl, DWORD dwEventType, LPVOID lpEventData,
         return NO_ERROR;
     case SERVICE_CONTROL_POWEREVENT:
     {
+
         PPOWERBROADCAST_SETTING pbs = (PPOWERBROADCAST_SETTING)lpEventData;
         switch (static_cast<MonitorState>(*pbs->Data))
         {
         case MonitorState::MONITOR_ON:
+        {
+            ULONGLONG currentTime = GetTickCount64();
+            Request req = Request::GET_LAST_INPUT_TIME_DWORD;
+            ULONGLONG lastInputTime = 0;
+            DWORD bytesRead = 0;
+            BOOL r = CallNamedPipe(PIPE_NAME, &req, sizeof(req), &lastInputTime, sizeof(lastInputTime), &bytesRead, NMPWAIT_NOWAIT);
+            if (r && lastInputTime != 0)
+            {
+                ULONGLONG diff = 0;
+                if (lastInputTime > currentTime)
+                    diff = lastInputTime - currentTime;
+                else
+                    diff = currentTime - lastInputTime;
+
+                if (diff > 60000)
+                {
+                    req = Request::TURN_OFF_DISPLAY;
+                    DWORD res = 0;
+                    BOOL r = CallNamedPipe(PIPE_NAME, &req, sizeof(int), &res, sizeof(DWORD), &bytesRead, 50);
+                    DisplayTurnedOffByService = true;
+                    break;
+                }
+            }
             eventName = Utilities::eventNames[MONITOR_ON_EVENT_INDEX];
             break;
+        }
+        break;
         case MonitorState::MONITOR_OFF:
+            if (DisplayTurnedOffByService)
+            {
+                DisplayTurnedOffByService = false;
+                break;
+            }
             eventName = Utilities::eventNames[MONITOR_OFF_EVENT_INDEX];
             break;
         default:
