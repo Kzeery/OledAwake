@@ -22,7 +22,8 @@ Runtime* ClientServerRuntime::getInstance()
 
 bool ClientServerRuntime::init()
 {
-    if (ensureServerEnvironment())
+    IsServer_ = ensureServerEnvironment();
+    if (IsServer_)
     {
         HANDLE serverRunningEvent = CreateEvent(NULL, TRUE, FALSE, L"ServerRunning");
         if (serverRunningEvent == NULL)

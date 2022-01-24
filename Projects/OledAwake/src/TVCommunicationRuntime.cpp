@@ -21,30 +21,29 @@ Runtime* TVCommunicationRuntime::getInstance()
 
 bool TVCommunicationRuntime::init()
 {
-    if (!ensureTVMacAddress()) 
-        return false;
+    ensureTVMacAddress();
 
     HMODULE hDLL = LoadLibrary(L"Shlwapi.dll");
     if (hDLL == NULL)
         SET_ERROR_EXIT("Failed to load Shlwapi.dll", false);
 
-    PATH_APPEND_TYPE pathAppend = (PATH_APPEND_TYPE)GetProcAddress(hDLL, "PathAppendW");
+    PATH_APPEND_TYPE pathAppend = (PATH_APPEND_TYPE)GetProcAddress(hDLL, "PathAppendA");
     if (pathAppend == NULL)
     {
-        Utilities::setLastError("Failed to load PathAppendW function");
+        Utilities::setLastError("Failed to load PathAppendA function");
         FreeLibrary(hDLL);
         return false;
     }
-    TCHAR szPath[MAX_PATH];
-    if (SUCCEEDED(SHGetFolderPath(NULL, CSIDL_COMMON_APPDATA, NULL, 0, szPath)))
+    CHAR szPath[MAX_PATH];
+    if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_COMMON_APPDATA, NULL, 0, szPath)))
     {
-        pathAppend(szPath, L"OledAwake");
-        CreateDirectory(szPath, NULL);
-        pathAppend(szPath, L"KeyFile.txt");
-        Path_to_KeyFile_ = Utilities::narrow(szPath);
+        pathAppend(szPath, "OledAwake");
+        CreateDirectoryA(szPath, NULL);
+        pathAppend(szPath, "KeyFile.txt");
+        Path_to_KeyFile_ = szPath;
     }
     FreeLibrary(hDLL);
-    if (Path_to_KeyFile_.size() == 0)
+    if (Path_to_KeyFile_.empty())
         SET_ERROR_EXIT("Failed to get KeyFile path", false);
 
     if (!loadKeyFromFile())
@@ -53,7 +52,7 @@ bool TVCommunicationRuntime::init()
             SET_ERROR_EXIT("Failed to setup session key", false);
         if (Key_.empty())
             SET_ERROR_EXIT("Received invalid session key", false)
-            Handshake_ = Utilities::narrow(HANDSHAKE_PAIRED);
+        Handshake_ = Utilities::narrow(HANDSHAKE_PAIRED);
         saveKeyToFile();
     }
     initHandshake();
@@ -135,8 +134,9 @@ bool TVCommunicationRuntime::setupSessionKey()
         SET_ERROR_EXIT(std::string("Failed to set up session key with Oled TV. Please check config. Error Message: ") + e.what(), false);
 }
 
-bool TVCommunicationRuntime::turnOnDisplay() const
+bool TVCommunicationRuntime::turnOnDisplay()
 {
+    ensureTVMacAddress();
     WSADATA wsaData;
     int iResult;
 
@@ -228,7 +228,7 @@ bool TVCommunicationRuntime::sendMessageToTV(const char* input) const
     catch (const std::exception& e)
     {
         char buffer[400];
-        snprintf(buffer, 400, "Failed to send message to tv. Encountered an error.\nMessage sent: (%s)\nError Message: (%s)", e.what(), input);
+        snprintf(buffer, 400, "Failed to send message to tv.\nMessage sent: (%s)\nError Message: (%s)", input, e.what());
         SET_ERROR_EXIT(buffer, false);
     }
     return true;
@@ -286,7 +286,19 @@ bool TVCommunicationRuntime::ensureTVMacAddress()
     if (iResult != 1)
     {
         FreeLibrary(hDLL);
-        Utilities::setLastError("Failed to convert IP string to address");
+        LPSTR buff;
+        DWORD dw = GetLastError();
+        FormatMessageA(
+            FORMAT_MESSAGE_ALLOCATE_BUFFER |
+            FORMAT_MESSAGE_FROM_SYSTEM |
+            FORMAT_MESSAGE_IGNORE_INSERTS,
+            NULL,
+            dw,
+            MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+            (LPSTR)&buff,
+            0, NULL);
+        Utilities::setLastError(buff);
+        LocalFree(buff);
         WSACleanup();
         return false;
     }

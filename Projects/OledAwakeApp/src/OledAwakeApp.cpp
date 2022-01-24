@@ -3,48 +3,24 @@
 
 #include "framework.h"
 #include "PipeCommunication.h"
-DWORD WINAPI InstanceThread(LPVOID);
 #define IN_BUFFER_SIZE sizeof(Request)
-#define OUT_BUFFER_SIZE sizeof(ULONGLONG)
-typedef DWORD(WINAPI* pGetLastInputTime)(BOOL*);
+#define OUT_BUFFER_SIZE sizeof(DWORD)
+
+DWORD WINAPI InstanceThread(LPVOID);
+void WINAPI cleanup(HANDLE&);
+void MessageLoop();
+DWORD WINAPI executeHookThread(LPVOID);
+
+typedef DWORD(WINAPI* pGetLastInputTime)(void);
 pGetLastInputTime getLastInputTime;
+
 HHOOK hMouseHook;
 HHOOK hKeyboardHook;
+
 HINSTANCE hDLL = NULL;
 HANDLE successEvent = NULL;
-bool exitNow = false;
-void MessageLoop()
-{
-    MSG message;
-    while (GetMessage(&message, NULL, 0, 0))
-    {
-        TranslateMessage(&message);
-        DispatchMessage(&message);
-    }
-}
 
-DWORD WINAPI executeHookThread(LPVOID lpParm)
-{
-    hDLL = LoadLibrary(L"OledAwakeHook.dll");
-    if (!hDLL) return 1;
-    getLastInputTime = (pGetLastInputTime)GetProcAddress(hDLL, "getLastInputTime");
-    if (!getLastInputTime) return -1;
-    hMouseHook = SetWindowsHookEx(WH_MOUSE_LL, (HOOKPROC)GetProcAddress(hDLL, "MouseProc"), hDLL, NULL);
-    hKeyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, (HOOKPROC)GetProcAddress(hDLL, "KBProc"), hDLL, NULL);
-    if (hMouseHook == NULL || hKeyboardHook == NULL)
-    {
-        return 2;
-    }
-    SetEvent(successEvent);
-    MessageLoop();
-    UnhookWindowsHookEx(hMouseHook);
-    UnhookWindowsHookEx(hMouseHook);
-    FreeLibrary(hDLL);
-    hDLL = NULL;
-    getLastInputTime = NULL;
-    exitNow = true;
-    return 0;
-}
+bool exitNow = false;
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                      _In_opt_ HINSTANCE hPrevInstance,
@@ -77,15 +53,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         CloseHandle(hHookThread);
         return 2;
     }
-    HANDLE hPipe = INVALID_HANDLE_VALUE, hThread = NULL;
+    HANDLE hPipe = INVALID_HANDLE_VALUE;
+    HANDLE hThread = NULL;
     DWORD  dwThreadId = 0;
     while (true)
     {
-        if (hThread != NULL)
-        {
-            WaitForSingleObject(hThread, INFINITE);
-            hThread = NULL;
-        }
         if (exitNow) return 4;
 
         hPipe = CreateNamedPipe(PIPE_NAME, PIPE_ACCESS_DUPLEX, PIPE_TYPE_MESSAGE | PIPE_WAIT, PIPE_UNLIMITED_INSTANCES, OUT_BUFFER_SIZE, IN_BUFFER_SIZE, NULL, NULL);
@@ -104,9 +76,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                     &dwThreadId);
 
                 if (hThread == NULL)
-                    return -1;
+                    return 5;
                 else
+                {
+                    WaitForSingleObject(hThread, INFINITE);
                     CloseHandle(hThread);
+                }
             }
             else
                 CloseHandle(hPipe);
@@ -118,17 +93,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
 }
 
-
 DWORD WINAPI InstanceThread(LPVOID lpvParam)
-// This routine is a thread processing function to read from and reply to a client
-// via the open pipe connection passed from the main loop. Note this allows
-// the main loop to continue executing, potentially creating more threads of
-// of this procedure to run concurrently, depending on the number of incoming
-// client connections.
 {
-    HANDLE hHeap = GetProcessHeap();
-    Request* pchRequest = (Request*)HeapAlloc(hHeap, 0, IN_BUFFER_SIZE);
-    ULONGLONG* pchReply = (ULONGLONG*)HeapAlloc(hHeap, 0, OUT_BUFFER_SIZE);
+    std::unique_ptr<Request> pchRequest(new Request);
+    std::unique_ptr<DWORD> pchReply(new DWORD(0));
 
     DWORD cbBytesRead = 0, cbReplyBytes = 0, cbWritten = 0;
     BOOL fSuccess = FALSE;
@@ -139,79 +107,98 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
 
     if (lpvParam == NULL)
     {
-        if (pchReply != NULL) HeapFree(hHeap, 0, pchReply);
-        if (pchRequest != NULL) HeapFree(hHeap, 0, pchRequest);
-        return (DWORD)-1;
-    }
-
-    if (pchRequest == NULL)
-    {
-        if (pchReply != NULL) HeapFree(hHeap, 0, pchReply);
-        return (DWORD)-1;
-    }
-
-    if (pchReply == NULL)
-    {
-        if (pchRequest != NULL) HeapFree(hHeap, 0, pchRequest);
         return (DWORD)-1;
     }
 
     hPipe = (HANDLE)lpvParam;
 
-    // Loop until done reading
-    while (1)
+    fSuccess = ReadFile(
+        hPipe,        // handle to pipe 
+        pchRequest.get(),    // buffer to receive data 
+        IN_BUFFER_SIZE, // size of buffer 
+        &cbBytesRead, // number of bytes read 
+        NULL);        // not overlapped I/O 
+
+    if (!fSuccess || cbBytesRead == 0)
     {
-        // Read client requests from the pipe. This simplistic code only allows messages
-        // up to BUFSIZE characters in length.
-        fSuccess = ReadFile(
-            hPipe,        // handle to pipe 
-            pchRequest,    // buffer to receive data 
-            IN_BUFFER_SIZE, // size of buffer 
-            &cbBytesRead, // number of bytes read 
-            NULL);        // not overlapped I/O 
+        cleanup(hPipe);
+        return 2;
+    }
+        
+    switch (*pchRequest)
+    {
+    case (Request::GET_LAST_INPUT_TIME_DWORD):
+    {
+        *pchReply = getLastInputTime ? getLastInputTime() : 0;
+        break;
+    }
+    case (Request::TURN_OFF_DISPLAY):
+        *pchReply = PostMessage(HWND_BROADCAST, WM_SYSCOMMAND, SC_MONITORPOWER, 2) ? ERROR_SUCCESS : GetLastError();
+        break;
+    default:
+        *pchReply = 0;
+        break;
 
-        if (!fSuccess || cbBytesRead == 0)
-            break;
-        switch (*pchRequest)
-        {
-        case (Request::GET_LAST_INPUT_TIME_DWORD):
-        {
-            BOOL mouse;
-            *pchReply = getLastInputTime ? static_cast<ULONGLONG>(getLastInputTime(&mouse)) : 0;
-            break;
-        }
-        case (Request::TURN_OFF_DISPLAY):
-            *pchReply = static_cast<ULONGLONG>(PostMessage(HWND_BROADCAST, WM_SYSCOMMAND, SC_MONITORPOWER, 2));
-            break;
-        default:
-            *pchReply = 0;
-            break;
+    }
+    // Process the incoming message.
 
-        }
-        // Process the incoming message.
+    // Write the reply to the pipe. 
+    fSuccess = WriteFile(
+        hPipe,        // handle to pipe 
+        pchReply.get(),     // buffer to write from 
+        OUT_BUFFER_SIZE, // number of bytes to write 
+        &cbWritten,   // number of bytes written 
+        NULL);        // not overlapped I/O 
 
-        // Write the reply to the pipe. 
-        fSuccess = WriteFile(
-            hPipe,        // handle to pipe 
-            pchReply,     // buffer to write from 
-            OUT_BUFFER_SIZE, // number of bytes to write 
-            &cbWritten,   // number of bytes written 
-            NULL);        // not overlapped I/O 
-
-        if (!fSuccess || OUT_BUFFER_SIZE != cbWritten)
-            break;
+    if (!fSuccess || OUT_BUFFER_SIZE != cbWritten)
+    {
+        cleanup(hPipe);
+        return 3;
     }
 
     // Flush the pipe to allow the client to read the pipe's contents 
     // before disconnecting. Then disconnect the pipe, and close the 
     // handle to this pipe instance. 
-
     FlushFileBuffers(hPipe);
+    cleanup(hPipe);
+    return 1;
+}
+
+void WINAPI cleanup(HANDLE& hPipe)
+{
     DisconnectNamedPipe(hPipe);
     CloseHandle(hPipe);
+}
 
-    HeapFree(hHeap, 0, pchRequest);
-    HeapFree(hHeap, 0, pchReply);
+DWORD WINAPI executeHookThread(LPVOID lpParm)
+{
+    hDLL = LoadLibrary(L"OledAwakeHook.dll");
+    if (!hDLL) return 1;
+    getLastInputTime = (pGetLastInputTime)GetProcAddress(hDLL, "getLastInputTime");
+    if (!getLastInputTime) return -1;
+    hMouseHook = SetWindowsHookEx(WH_MOUSE_LL, (HOOKPROC)GetProcAddress(hDLL, "MouseProc"), hDLL, NULL);
+    hKeyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, (HOOKPROC)GetProcAddress(hDLL, "KBProc"), hDLL, NULL);
+    if (hMouseHook == NULL || hKeyboardHook == NULL)
+    {
+        return 2;
+    }
+    SetEvent(successEvent);
+    MessageLoop();
+    UnhookWindowsHookEx(hMouseHook);
+    UnhookWindowsHookEx(hMouseHook);
+    FreeLibrary(hDLL);
+    hDLL = NULL;
+    getLastInputTime = NULL;
+    exitNow = true;
+    return 0;
+}
 
-    return 1;
+void MessageLoop()
+{
+    MSG message;
+    while (GetMessage(&message, NULL, 0, 0))
+    {
+        TranslateMessage(&message);
+        DispatchMessage(&message);
+    }
 }

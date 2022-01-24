@@ -13,16 +13,27 @@
 			<Directory Id="$(var.ProgramFilesDir)">
 				<Directory Id="INSTALLFOLDER" Name="OledAwake">
 					<Directory Id="Bins" Name ="bin"/>
-					<Directory Id="Libs" Name ="lib"/>
 					</Directory>
 			</Directory>
 		</Directory>
 
 		<DirectoryRef Id="Bins">
 			<Component Id="Installbins" Guid="{DEDE58B2-D01E-41BF-AAEC-A6DF581E84ED}">
+				
 				<File Id="OledAwakeEXE" Name="OledAwake.exe" DiskId="1" Source ="$(var.SourceDir)\OledAwake.exe" KeyPath="yes"/>
 				<File Id="OledAwakeHook" Name="OledAwakeHook.dll" Source = "$(var.SourceDir)\OledAwakeHook.dll"/>
 				<File Id="OledAwakeApp" Name="OledAwakeApp.exe" Source = "$(var.SourceDir)\OledAwakeApp.exe"/>
+				<File Source ="$(var.SourceDir)\ErrorMessages.dll" />
+				
+				<RegistryKey Root="HKLM" Key="SYSTEM\CurrentControlSet\Services\EventLog\Application\OledAwake">
+					<RegistryValue Type="integer" Name="TypesSupported" Value="7" />
+					<RegistryValue Type="string" Name="EventMessageFile" Value="[Bins]ErrorMessages.dll" />
+				</RegistryKey>
+				
+				<RegistryKey Root="HKLM" Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run">
+					<RegistryValue Type="string" Name="OledAwakeApp" Value="[Bins]OledAwakeApp.exe" />
+				</RegistryKey>
+				
 				<ServiceInstall
 						Id="ServiceInstaller"
 						Type="ownProcess"
@@ -31,42 +42,24 @@
 						Start="auto"
 						ErrorControl="normal"
 						Vital="yes"
-						Description="This Service is responsible for awaking the monitor on user input after being turned off."
-									/>
+						Description="This Service is responsible for synchronizing the power state of the TV with that of the computer."/>
 				<ServiceControl Id="StartService" Start="install" Stop="both" Remove="uninstall" Name="OledAwake" Wait="yes" />
+				
 			</Component>
 		</DirectoryRef>
 		
-
-		<DirectoryRef Id="Libs">
-			<Component Id="InstallLibsAndRegistry" Guid="{BF939823-44FC-4550-97C3-39AFE50851EE}">
-				<File Source ="$(var.SourceDir)\ErrorMessages.dll" />
-				<RegistryKey Root="HKLM" Key="SYSTEM\CurrentControlSet\Services\EventLog\Application\OledAwake">
-					<RegistryValue Type="integer" Name="TypesSupported" Value="7" />
-					<RegistryValue Type="string" Name="EventMessageFile" Value="[Libs]ErrorMessages.dll" />
-				</RegistryKey>
-				<RegistryKey Root="HKLM" Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run">
-					<RegistryValue Type="string" Name="OledAwakeApp" Value="[Bins]OledAwakeApp.exe" />
-				</RegistryKey>
-			</Component>
-		</DirectoryRef>
-
+		
 		<CustomAction Id="StartOledAwakeApp"
-						  FileKey="OledAwakeApp"
-						  ExeCommand=""
-						  Execute="immediate"
-						  Return="asyncNoWait"
-                 />
+					  FileKey="OledAwakeApp"
+					  ExeCommand=""
+					  Execute="immediate"
+					  Return="asyncNoWait"/>
 
 		<InstallExecuteSequence>
 			<Custom Action='StartOledAwakeApp' After='InstallFinalize' >NOT Installed</Custom>
 		</InstallExecuteSequence>
-		
-		
-		<InstallExecuteSequence>
-			<Custom Action='OledAwakeApp.TaskKill' Before='InstallValidate'/>
-		</InstallExecuteSequence>
 
+		
 		<Property Id="QtExecCmdLine"
 				  Value='"[WindowsFolder]\System32\taskkill.exe" /F /IM OledAwakeApp.exe'/>
 		<CustomAction Id="OledAwakeApp.TaskKill"
@@ -74,12 +67,14 @@
 					  DllEntry="CAQuietExec"
 					  Execute="immediate"
 					  Return="ignore"/>
-
+		
+		<InstallExecuteSequence>
+			<Custom Action='OledAwakeApp.TaskKill' Before='InstallValidate'/>
+		</InstallExecuteSequence>
 
 
 		<Feature Id="ProductFeature" Title="OledAwake" Level="1">
 			<ComponentRef Id="Installbins"/>
-			<ComponentRef Id="InstallLibsAndRegistry" />
 		</Feature>
 
 		<util:CloseApplication Id="CloseOledAwakeApp" Target="OledAwakeApp.exe" CloseMessage="no" RebootPrompt="no">REMOVE = "ALL"</util:CloseApplication>
