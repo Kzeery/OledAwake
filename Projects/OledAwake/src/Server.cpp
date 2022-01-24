@@ -1,25 +1,28 @@
 #include "Server.h"
 #include "Utilities.h"
+#include "RuntimeManager.h"
 void Room::join(ChatParticipant_ptr participant)
 {
     Participants_.insert(participant);
-    for (const auto& msg : recent_msgs_)
-        participant->deliver(msg);
+    int state = static_cast<int>(RuntimeManager::getClientServerRuntime()->getCurrentMonitorState());
+    Message msg(&state);
+    participant->deliver(msg);
+    
 }
 
 void Room::leave(ChatParticipant_ptr participant)
 {
     Participants_.erase(participant);
+    if (Participants_.size() == 0)
+    {
+        memset(OtherMessage_.getBody(), 0, BODY_LENGTH);
+    }
 }
 
 void Room::deliver(const Message& msg)
 {
     if (msg.getIdentifier() != Name_)
         OtherMessage_ = msg;
-
-    recent_msgs_.push_back(msg);
-    while (recent_msgs_.size() > MAX_RECENT_MESSAGES)
-        recent_msgs_.pop_front();
 
     for (auto participant : Participants_)
         participant->deliver(msg);

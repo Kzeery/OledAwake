@@ -18,14 +18,20 @@ enum class MonitorState {
     MONITOR_ON = 1
 };
 
-typedef BOOL(_cdecl* PATH_APPEND_TYPE)(LPWSTR, LPCWSTR);
+enum class Inputs {
+    HDMI1 = 1,
+    HDMI2 = 2
+};
+
+typedef BOOL(_cdecl* PATH_APPEND_TYPE)(LPSTR, LPCSTR);
 typedef DWORD(_cdecl* SendArpType)(IN_ADDR, IN_ADDR, PVOID, PULONG);
 
 class TVCommunicationRuntime : public Runtime
 {
 public:
     bool turnOffDisplay() const;
-    bool turnOnDisplay() const;
+    bool turnOnDisplay();
+    bool switchInput(Inputs input) const;
     bool init();
     static Runtime* getInstance();
 private:

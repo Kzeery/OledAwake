@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Include>
+	<?define IncludeDir = "$(var.SolutionDir)include"?>	
+	<?define ProgramFilesDir = "ProgramFiles64Folder" ?>
+	
+	<?define SourceDir = "$(var.IncludeDir)\bin" ?>
+	
+</Include>

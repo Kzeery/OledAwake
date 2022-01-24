@@ -7,8 +7,9 @@ std::vector<wchar_t*> Utilities::eventNames =
 {
     L"MonitorOn",
     L"MonitorOff",
-    L"ClientServerExitedThread",
-    L"KillMonitorThread"
+    L"SwitchToHDMI1",
+    L"SwitchToHDMI2",
+    L"ClientServerExitedThread"
 };
 std::wstring Utilities::getLastError()
 {

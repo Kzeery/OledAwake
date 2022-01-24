@@ -11,7 +11,9 @@ public:
     static Runtime* getInstance();
     MonitorState getOtherMonitorState() const;
     void setCurrentMonitorState(MonitorState state);
+    MonitorState getCurrentMonitorState();
     bool cleanUpAndReconnect();
+    bool isServer() const { return IsServer_; }
 private:
     ClientServerRuntime() : ClientServerObject_(nullptr), LocalIP_(""), State_(MonitorState::MONITOR_ON) {}
     ~ClientServerRuntime();
@@ -24,9 +26,9 @@ private:
     std::unique_ptr<ReadableClientServerObject> ClientServerObject_;
     std::unique_ptr<std::thread> ClientServerObjectThread_;
     std::string LocalIP_;
-    MonitorState State_;
+    MonitorState State_ = MonitorState::MONITOR_ON;
     static std::unique_ptr<Runtime> Instance_;
-
+    bool IsServer_ = false;
 };
 
 

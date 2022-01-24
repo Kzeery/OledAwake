@@ -6,6 +6,7 @@ ClientServerRuntime::~ClientServerRuntime()
     if (ClientServerObjectThread_ != nullptr && ClientServerObjectThread_->joinable())
     {
         ClientServerObject_->close();
+        ClientServerObject_.reset(nullptr);
         ClientServerObjectThread_->join();
     }
 }
@@ -21,7 +22,8 @@ Runtime* ClientServerRuntime::getInstance()
 
 bool ClientServerRuntime::init()
 {
-    if (ensureServerEnvironment())
+    IsServer_ = ensureServerEnvironment();
+    if (IsServer_)
     {
         HANDLE serverRunningEvent = CreateEvent(NULL, TRUE, FALSE, L"ServerRunning");
         if (serverRunningEvent == NULL)
@@ -68,7 +70,10 @@ MonitorState ClientServerRuntime::getOtherMonitorState() const
 {
     return static_cast<MonitorState>(ClientServerObject_->getOtherState());
 }
-
+MonitorState ClientServerRuntime::getCurrentMonitorState()
+{
+    return State_;
+}
 void ClientServerRuntime::setCurrentMonitorState(MonitorState state)
 {
     State_ = state;
@@ -104,11 +109,16 @@ bool ClientServerRuntime::initServer()
 
         CloseHandle(serverRunningEvent);
         io_service.run();
-        ClientServerObject_.reset(nullptr);
-        HANDLE serverExitedEvent = OpenEvent(EVENT_ALL_ACCESS, FALSE, Utilities::eventNames[CLIENT_SERVER_EXITED_EVENT_INDEX]);
-        if (!serverExitedEvent) throw std::exception("CRITICAL: COULD NOT OPEN SERVER EXITED EVENT");
-        SetEvent(serverExitedEvent);
-        CloseHandle(serverExitedEvent);
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        if (ClientServerObject_ != nullptr)
+        {
+            HANDLE serverExitedEvent = OpenEvent(EVENT_ALL_ACCESS, FALSE, Utilities::eventNames[CLIENT_SERVER_EXITED_EVENT_INDEX]);
+            if (!serverExitedEvent) throw std::exception("CRITICAL: COULD NOT OPEN SERVER EXITED EVENT");
+            SetEvent(serverExitedEvent);
+            CloseHandle(serverExitedEvent);
+            ClientServerObject_.reset(nullptr);
+
+        }
     }
     catch (std::exception& e)
         SET_ERROR_EXIT(std::string("Encountered an error while starting the server! Error: ") + e.what(), false);
@@ -133,11 +143,16 @@ bool ClientServerRuntime::initClient()
 
         CloseHandle(clientRunningEvent);
         io_service.run();
-        ClientServerObject_.reset(nullptr);
-        HANDLE clientExitedEvent = OpenEvent(EVENT_ALL_ACCESS, FALSE, Utilities::eventNames[CLIENT_SERVER_EXITED_EVENT_INDEX]);
-        if (!clientExitedEvent) throw std::exception("CRITICAL: COULD NOT OPEN CLIENT EXITED EVENT");
-        SetEvent(clientExitedEvent);
-        CloseHandle(clientExitedEvent);
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        if (ClientServerObject_ != nullptr)
+        {
+            HANDLE clientExitedEvent = OpenEvent(EVENT_ALL_ACCESS, FALSE, Utilities::eventNames[CLIENT_SERVER_EXITED_EVENT_INDEX]);
+            if (!clientExitedEvent) throw std::exception("CRITICAL: COULD NOT OPEN CLIENT EXITED EVENT");
+            SetEvent(clientExitedEvent);
+            CloseHandle(clientExitedEvent);
+            ClientServerObject_.reset(nullptr);
+        }
+        
     }
     catch (std::exception& e)
         SET_ERROR_EXIT(std::string("Error Connecting client: ") + e.what(), 0);
