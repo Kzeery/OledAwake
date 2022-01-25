@@ -1,7 +1,10 @@
 ﻿#pragma once
 #include <SDKDDKVer.h>
 #include <string>
-#include <vector>
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#define EVENT_NAMES_SIZE 5
 enum
 {
     MONITOR_ON_EVENT_INDEX = 0,
@@ -21,7 +24,7 @@ public:
     [[nodiscard]] static std::wstring getLastError();
 
     static void setLastError(std::string error);
-    static std::vector<wchar_t*> eventNames;
+    static wchar_t* eventNames[EVENT_NAMES_SIZE];
 
     
 private:

@@ -10,17 +10,11 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "OledAwake", "Projects\OledA
 EndProject
 Project("{930C7802-8A8C-48F9-8165-68863BCCD9DD}") = "OledAwakeInstall", "Projects\OledAwakeInstall\OledAwakeInstall.wixproj", "{0DD74C39-84F8-4E70-9AAB-4D955978FFF3}"
 	ProjectSection(ProjectDependencies) = postProject
-		{D29EC016-2F8A-45E2-90D6-05F229A4374A} = {D29EC016-2F8A-45E2-90D6-05F229A4374A}
 		{CCCF3A8C-8ADE-4D14-8FE6-F57C2FDABF98} = {CCCF3A8C-8ADE-4D14-8FE6-F57C2FDABF98}
 		{828F60E6-FDC1-4C5E-82B1-C0AA5C4F9B6F} = {828F60E6-FDC1-4C5E-82B1-C0AA5C4F9B6F}
 	EndProjectSection
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "OledAwakeHook", "Projects\OledAwakeHook\OledAwakeHook.vcxproj", "{D29EC016-2F8A-45E2-90D6-05F229A4374A}"
-EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "OledAwakeApp", "Projects\OledAwakeApp\OledAwakeApp.vcxproj", "{CCCF3A8C-8ADE-4D14-8FE6-F57C2FDABF98}"
-	ProjectSection(ProjectDependencies) = postProject
-		{D29EC016-2F8A-45E2-90D6-05F229A4374A} = {D29EC016-2F8A-45E2-90D6-05F229A4374A}
-	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -36,10 +30,6 @@ Global
 		{0DD74C39-84F8-4E70-9AAB-4D955978FFF3}.Debug|x64.Build.0 = Debug|x64
 		{0DD74C39-84F8-4E70-9AAB-4D955978FFF3}.Release|x64.ActiveCfg = Release|x64
 		{0DD74C39-84F8-4E70-9AAB-4D955978FFF3}.Release|x64.Build.0 = Release|x64
-		{D29EC016-2F8A-45E2-90D6-05F229A4374A}.Debug|x64.ActiveCfg = Debug|x64
-		{D29EC016-2F8A-45E2-90D6-05F229A4374A}.Debug|x64.Build.0 = Debug|x64
-		{D29EC016-2F8A-45E2-90D6-05F229A4374A}.Release|x64.ActiveCfg = Release|x64
-		{D29EC016-2F8A-45E2-90D6-05F229A4374A}.Release|x64.Build.0 = Release|x64
 		{CCCF3A8C-8ADE-4D14-8FE6-F57C2FDABF98}.Debug|x64.ActiveCfg = Debug|x64
 		{CCCF3A8C-8ADE-4D14-8FE6-F57C2FDABF98}.Debug|x64.Build.0 = Debug|x64
 		{CCCF3A8C-8ADE-4D14-8FE6-F57C2FDABF98}.Release|x64.ActiveCfg = Release|x64

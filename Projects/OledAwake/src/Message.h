@@ -1,5 +1,8 @@
 #pragma once
 #include <SDKDDKVer.h>
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -7,8 +10,7 @@
 #include <vector>
 #define IDENTIFIER_LENGTH 32
 #define BODY_LENGTH sizeof(int)
-#define MAX_MESSAGE_LENGTH  IDENTIFIER_LENGTH + BODY_LENGTH
-#define BODY_PTR Data_.data() + IDENTIFIER_LENGTH
+#define MAX_MESSAGE_LENGTH  IDENTIFIER_LENGTH + BODY_LENGTH + 1
 
 class Message;
 
@@ -20,66 +22,57 @@ public:
     virtual void close() = 0;
     virtual ~ReadableClientServerObject() {};
 };
+
 class Message
 {
 public:
-    Message() : Data_(std::vector<char>(MAX_MESSAGE_LENGTH, 0)) 
+    Message()
     {
-        setIdentifier(boost::asio::ip::host_name());
     }
 
-    Message(int* messageBody) :  Data_(std::vector<char>(MAX_MESSAGE_LENGTH, 0))
+    Message(int* messageBody)
     {
-        std::memcpy(BODY_PTR, messageBody, BODY_LENGTH);
-        setIdentifier(boost::asio::ip::host_name());
+        std::memcpy(MessageData_.Body_, messageBody, BODY_LENGTH);
     }
 
-    const char* getData() const
+    char* getIdentifier()
     {
-        return Data_.data();
-    }
-
-    char* getData()
-    {
-        return Data_.data();
-    }
-
-    const char* getBody() const
-    {
-        return BODY_PTR;
+        return MessageData_.Identifier_;
     }
 
     char* getBody()
     {
-        return BODY_PTR;
+        return MessageData_.Body_;
+    }
+    const char* getBody() const
+    {
+        return MessageData_.Body_;
     }
 
-    const std::string getIdentifier() const
+    const char* getIdentifier() const
     {
-        return Identifier_;
+        return MessageData_.Identifier_;
     }
 
-    bool decodeIdentifier()
+    char* getData()
     {
-        char identifier[IDENTIFIER_LENGTH + 1] = "";
-        std::memcpy(identifier, Data_.data(), IDENTIFIER_LENGTH);
-        Identifier_ = identifier;
-        return true;
+        return (char*)&MessageData_;
     }
-    
+    const char* getData() const
+    {
+        return (char*)&MessageData_;
+    }
+
+    void setIdentifier(const std::string& hostName)
+    {
+        size_t sz = hostName.size() > IDENTIFIER_LENGTH ? IDENTIFIER_LENGTH : hostName.size();
+        std::memcpy(MessageData_.Identifier_, hostName.c_str(), sz);
+    }
 private:
-    void setIdentifier(std::string identifier)
+    struct MessageDataStruct
     {
-        if (identifier.size() > IDENTIFIER_LENGTH)
-            identifier = identifier.substr(0, IDENTIFIER_LENGTH);
-        Identifier_ = std::move(identifier);
-        encodeIdentifier();
-    }
-
-    void encodeIdentifier()
-    {
-        std::memcpy(Data_.data(), Identifier_.c_str(), Identifier_.size());
-    }
-    std::vector<char> Data_;
-    std::string Identifier_;
+        char Identifier_[IDENTIFIER_LENGTH]{ 0 };
+        char Body_[BODY_LENGTH]{ 0 };
+        char RESERVED[1]{ 0 };
+    } MessageData_;
 };

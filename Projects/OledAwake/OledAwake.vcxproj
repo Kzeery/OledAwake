@@ -32,7 +32,6 @@
     <ClInclude Include="src\ClientServerRuntime.h" />
     <ClInclude Include="src\ErrorMessages.h" />
     <ClInclude Include="src\Message.h" />
-    <ClInclude Include="src\PipeCommunication.h" />
     <ClInclude Include="src\Runtime.h" />
     <ClInclude Include="src\RuntimeManager.h" />
     <ClInclude Include="src\Server.h" />

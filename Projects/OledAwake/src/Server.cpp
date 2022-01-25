@@ -6,6 +6,7 @@ void Room::join(ChatParticipant_ptr participant)
     Participants_.insert(participant);
     int state = static_cast<int>(RuntimeManager::getClientServerRuntime()->getCurrentMonitorState());
     Message msg(&state);
+    msg.setIdentifier(Name_);
     participant->deliver(msg);
     
 }
@@ -22,7 +23,7 @@ void Room::leave(ChatParticipant_ptr participant)
 void Room::deliver(const Message& msg)
 {
     if (msg.getIdentifier() != Name_)
-        OtherMessage_ = msg;
+        memcpy(OtherMessage_.getData(), msg.getData(), MAX_MESSAGE_LENGTH);
 
     for (auto participant : Participants_)
         participant->deliver(msg);
@@ -30,6 +31,7 @@ void Room::deliver(const Message& msg)
 
 void Room::write(Message& msg)
 {
+    msg.setIdentifier(Name_);
     deliver(msg);
 }
 
@@ -58,18 +60,15 @@ void Session::doReadIdentifier()
 {
     auto self(shared_from_this());
     boost::asio::async_read(Socket_,
-        boost::asio::buffer(ReadMessage_.getData(), IDENTIFIER_LENGTH),
+        boost::asio::buffer(ReadMessage_.getIdentifier(), IDENTIFIER_LENGTH),
         [this, self](boost::system::error_code ec, std::size_t /*length*/)
         {
-            if (!ec && ReadMessage_.decodeIdentifier())
-            {
+            if (!ec)
                 doReadBody();
-            }
             else
             {
                 Room_.leave(shared_from_this());
                 Utilities::setLastError(std::string("Session doReadIdentifier encountered an error: ") + ec.message());
-
             }
         });
 }

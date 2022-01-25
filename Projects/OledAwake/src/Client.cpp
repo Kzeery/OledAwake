@@ -11,8 +11,9 @@ Client::Client(boost::asio::io_service& io_service,
 
 void Client::write(Message& msg)
 {
+    msg.setIdentifier(Name_);
     IO_Service_.post(
-        [this, msg]()
+        [this, &msg]()
         {
             bool write_in_progress = !WriteMessages_.empty();
             WriteMessages_.push_back(msg);
@@ -27,13 +28,12 @@ const int Client::getOtherState() const
 {
     return *(int*) OtherMessage_.getBody();
 }
+
 void Client::close()
 {
     IO_Service_.post([this]() { Socket_.close(); });
 
 }
-
-
 
 void Client::doConnect(tcp::resolver::iterator endpoint_iterator)
 {
@@ -50,10 +50,10 @@ void Client::doConnect(tcp::resolver::iterator endpoint_iterator)
 void Client::doReadIdentifier()
 {
     boost::asio::async_read(Socket_,
-        boost::asio::buffer(ReadMessage_.getData(), IDENTIFIER_LENGTH),
+        boost::asio::buffer(ReadMessage_.getIdentifier(), IDENTIFIER_LENGTH),
         [this](boost::system::error_code ec, std::size_t /*length*/)
         {
-            if (!ec && ReadMessage_.decodeIdentifier())
+            if (!ec)
             {
                 doReadBody();
             }
@@ -75,7 +75,7 @@ void Client::doReadBody()
             if (!ec)
             {
                 if (ReadMessage_.getIdentifier() != Name_)
-                    OtherMessage_ = ReadMessage_;
+                    memcpy(OtherMessage_.getData(), ReadMessage_.getData(), MAX_MESSAGE_LENGTH);
                 doReadIdentifier();
             }
             else

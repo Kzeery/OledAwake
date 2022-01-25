@@ -3,5 +3,6 @@
 enum class Request
 {
     GET_LAST_INPUT_TIME_DWORD = 1,
-    TURN_OFF_DISPLAY = 2
+    TURN_OFF_DISPLAY = 2,
+    QUIT_APP = 3
 };

@@ -3,7 +3,7 @@
 #include <codecvt>
 #include <locale>
 std::string Utilities::LastError_ = "";
-std::vector<wchar_t*> Utilities::eventNames = 
+wchar_t* Utilities::eventNames[EVENT_NAMES_SIZE] = 
 {
     L"MonitorOn",
     L"MonitorOff",
