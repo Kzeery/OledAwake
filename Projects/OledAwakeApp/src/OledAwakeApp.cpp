@@ -276,7 +276,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             lastInputTime = t;
         }
-        PostQuitMessage(0);
         WM_INPUT_EXIT();
     }
     case WM_DESTROY:
