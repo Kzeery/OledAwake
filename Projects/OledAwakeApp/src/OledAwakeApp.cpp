@@ -15,7 +15,7 @@ BOOL                MessageLoop();
 
 HINSTANCE hInst;                                // current instance
 bool exitNow = false;
-ULONGLONG lastInputTime = 0;
+std::atomic<ULONGLONG> lastInputTime{ 0 };
 
 const WCHAR* szTitle = L"OledAwakeApp";                  // The title bar text
 const WCHAR* szWindowClass = L"OledAwakeClass";
@@ -73,8 +73,19 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 {
     UNREFERENCED_PARAMETER(hInstance);
     UNREFERENCED_PARAMETER(hPrevInstance);
-    UNREFERENCED_PARAMETER(lpCmdLine);
     UNREFERENCED_PARAMETER(nCmdShow);
+    int argc = 0;
+    LPWSTR* argv = CommandLineToArgvW(lpCmdLine, &argc);
+    if (argc > 0)
+    {
+        if (lstrcmpW(argv[0], L"EXIT") == 0)
+        {
+            HWND handle = FindWindow(NULL, szTitle);
+            if (handle)
+                SendMessage(handle, WM_DESTROY, NULL, NULL);
+            return 0;
+        }
+    }
 
     HANDLE instanceMutex = CreateMutex(NULL, TRUE, L"OledAwakeAppMutex");
     if (instanceMutex == NULL || GetLastError() == ERROR_ALREADY_EXISTS) {
@@ -137,12 +148,12 @@ BOOL initInstance(HINSTANCE hInstance, int nCmdShow)
 
     Rid[0].usUsagePage = 0x01;          // HID_USAGE_PAGE_GENERIC
     Rid[0].usUsage = 0x02;              // HID_USAGE_GENERIC_MOUSE
-    Rid[0].dwFlags = RIDEV_INPUTSINK;    // adds mouse and also ignores legacy mouse messages
+    Rid[0].dwFlags = RIDEV_INPUTSINK | RIDEV_NOLEGACY | RIDEV_CAPTUREMOUSE;    // adds mouse and also ignores legacy mouse messages
     Rid[0].hwndTarget = hWnd;
 
     Rid[1].usUsagePage = 0x01;          // HID_USAGE_PAGE_GENERIC
     Rid[1].usUsage = 0x06;              // HID_USAGE_GENERIC_KEYBOARD
-    Rid[1].dwFlags = RIDEV_INPUTSINK;    // adds keyboard and also ignores legacy keyboard messages
+    Rid[1].dwFlags = RIDEV_INPUTSINK | RIDEV_NOLEGACY;    // adds keyboard and also ignores legacy keyboard messages
     Rid[1].hwndTarget = hWnd;
 
     if (RegisterRawInputDevices(Rid, 2, sizeof(Rid[0])) == FALSE)
@@ -189,12 +200,13 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
     DWORD writeSize = sizeof(ULONGLONG);
     switch (*pchRequest)
     {
-    case Request::GET_LAST_INPUT_TIME_DWORD:
-        *pchReply = lastInputTime;
+    case Request::GET_TIME_SINCE_LAST_INPUT:
+        *pchReply = GetTickCount64() - lastInputTime;
         break;
     case Request::TURN_OFF_DISPLAY:
         *pchReply = PostMessage(HWND_BROADCAST, WM_SYSCOMMAND, SC_MONITORPOWER, 2) ? ERROR_SUCCESS : GetLastError();
         writeSize = sizeof(DWORD);
+        lastInputTime = GetTickCount64();
         break;
     default:
         cleanup(hPipe);
@@ -253,7 +265,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     {
     case WM_INPUT:
     {
-        auto t = GetTickCount64();
+        ULONGLONG t = GetTickCount64();
         if (t - lastInputTime > 1000)
         {
             UINT dwSize = 0;

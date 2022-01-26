@@ -33,7 +33,6 @@ public:
     bool turnOnDisplay();
     bool switchInput(Inputs input) const;
     bool init();
-    static Runtime* getInstance();
 private:
     TVCommunicationRuntime() {};
     ~TVCommunicationRuntime() {  };
@@ -51,5 +50,6 @@ private:
 
 
     static std::unique_ptr<Runtime> Instance_;
-
+    static Runtime* getInstance();
+    friend class RuntimeManager;
 };

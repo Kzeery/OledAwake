@@ -14,7 +14,8 @@
 #include <malloc.h>
 #include <memory.h>
 #include <tchar.h>
-
+#include <atomic>
+#include <shellapi.h>
 //{{NO_DEPENDENCIES}}
 // Microsoft Visual C++ generated include file.
 // Used by OledAwakeApp.rc

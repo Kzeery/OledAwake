@@ -19,22 +19,17 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="src\Client.cpp" />
     <ClCompile Include="src\ClientServerRuntime.cpp" />
     <ClCompile Include="src\OledAwake.cpp" />
     <ClCompile Include="src\RuntimeManager.cpp" />
-    <ClCompile Include="src\Server.cpp" />
     <ClCompile Include="src\TVCommunicationRuntime.cpp" />
     <ClCompile Include="src\Utilities.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="src\Client.h" />
     <ClInclude Include="src\ClientServerRuntime.h" />
     <ClInclude Include="src\ErrorMessages.h" />
-    <ClInclude Include="src\Message.h" />
     <ClInclude Include="src\Runtime.h" />
     <ClInclude Include="src\RuntimeManager.h" />
-    <ClInclude Include="src\Server.h" />
     <ClInclude Include="src\Environment.h" />
     <ClInclude Include="src\TVCommunicationRuntime.h" />
     <ClInclude Include="src\Utilities.h" />

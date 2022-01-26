@@ -46,3 +46,8 @@ std::string Utilities::narrow(std::wstring sInput)
     return out;
 }
 
+ULL Utilities::absoluteDiff(const ULL& a, const ULL& b)
+{
+    return a > b ? a - b : b - a;
+}
+

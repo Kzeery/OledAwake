@@ -2,7 +2,7 @@
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"
 	 xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
 	<?include "Includes.wxi"?>
-	<Product Id="*" Name="OledAwake" Language="1033" Version="2.2.3" Manufacturer="Kzeery" UpgradeCode="d02d649b-bb89-4923-a2b5-46e6d5084956">
+	<Product Id="*" Name="OledAwake" Language="1033" Version="2.2.6" Manufacturer="Kzeery" UpgradeCode="d02d649b-bb89-4923-a2b5-46e6d5084956">
 		<Package InstallerVersion="300" Compressed="yes" InstallScope="perMachine" InstallPrivileges="elevated" Platform="x64"/>
 		<MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
 		<MediaTemplate EmbedCab="yes" />
@@ -51,25 +51,26 @@
 		<CustomAction Id="StartOledAwakeApp"
 					  FileKey="OledAwakeApp"
 					  ExeCommand=""
-					  Execute="immediate"
-					  Return="asyncNoWait"/>
+					  Execute="deferred"
+					  Return="asyncNoWait"
+					  Impersonate="no"/>
 
 		<InstallExecuteSequence>
-			<Custom Action='StartOledAwakeApp' After='InstallFinalize' >NOT Installed</Custom>
+			<Custom Action='StartOledAwakeApp' Before='InstallFinalize' >NOT Installed</Custom>
 		</InstallExecuteSequence>
 
-		
-		<Property Id="QtExecCmdLine"
-				  Value='"[WindowsFolder]\System32\taskkill.exe" /F /IM OledAwakeApp.exe'/>
-		<CustomAction Id="OledAwakeApp.TaskKill"
-					  BinaryKey="WixCA"
-					  DllEntry="CAQuietExec"
-					  Execute="immediate"
-					  Return="ignore"/>
-		
+
+		<CustomAction Id="KillOledAwakeApp"
+					  FileKey="OledAwakeApp"
+					  ExeCommand="EXIT"
+					  Execute="deferred"
+					  Return="ignore"
+					  Impersonate="no"/>
+
 		<InstallExecuteSequence>
-			<Custom Action='OledAwakeApp.TaskKill' Before='InstallValidate'/>
+			<Custom Action='KillOledAwakeApp' After='InstallInitialize' />
 		</InstallExecuteSequence>
+
 
 
 		<Feature Id="ProductFeature" Title="OledAwake" Level="1">
