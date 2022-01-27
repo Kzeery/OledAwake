@@ -246,7 +246,7 @@ BOOL HandleEvents(HANDLE stopEvent)
             break;
         case MONITOR_OFF_EVENT_INDEX: // Turn monitor off
             clientServerRuntime->setCurrentMonitorState(MonitorState::MONITOR_OFF);
-            if (clientServerRuntime->getOtherMonitorState() == MonitorState::MONITOR_OFF)
+            if (clientServerRuntime->getOtherMonitorState() != MonitorState::MONITOR_ON)
                 if (!communications->turnOffDisplay()) SvcReportEvent(Utilities::getLastError());
             break;
         case SERVER_EXITED_EVENT_INDEX: // Client/server thread exited

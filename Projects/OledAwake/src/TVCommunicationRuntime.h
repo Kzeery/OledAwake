@@ -15,7 +15,8 @@
 
 enum class MonitorState {
     MONITOR_OFF = 0,
-    MONITOR_ON = 1
+    MONITOR_ON  = 1,
+    UNKNOWN     = 2
 };
 
 enum class Inputs {
