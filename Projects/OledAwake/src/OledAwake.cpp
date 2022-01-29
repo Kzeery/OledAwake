@@ -499,6 +499,6 @@ VOID CleanResources()
         UnregisterPowerSettingNotification(powerNotifyHandle);
     }
     if (deviceNotifyHandle)
-        UnregisterPowerSettingNotification(deviceNotifyHandle);
+        UnregisterDeviceNotification(deviceNotifyHandle);
     ReportSvcStatus(SERVICE_STOPPED, NO_ERROR, 0);
 }
