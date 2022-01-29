@@ -32,25 +32,27 @@ class TVCommunicationRuntime : public Runtime
 public:
     bool turnOffDisplay() const;
     bool turnOnDisplay();
-    bool switchInput(Inputs input) const;
-    bool init();
+    bool switchInput(Inputs) const;
+    static Runtime* getInstance(bool);
 private:
-    TVCommunicationRuntime() {};
+    TVCommunicationRuntime(): WSAData_(WSADATA()) {};
     ~TVCommunicationRuntime() {  };
     bool loadKeyFromFile();
     bool setupSessionKey();
     void initHandshake();
     void saveKeyToFile() const;
     bool ensureTVMacAddress();
-    bool sendMessageToTV(const char* message) const;
+    bool sendMessageToTV(const char*) const;
+
+    bool init();
+    std::unique_ptr<Runtime>& destroy() { if(WSASuccessful_) WSACleanup(); return Instance_; }
     std::string Key_;
     std::string Handshake_;
 
     std::string Path_to_KeyFile_ = "";
     std::string MacBuffer_ = "\xff\xff\xff\xff\xff\xff";
-
-
+    WSADATA WSAData_;
+    bool WSASuccessful_{ false };
+    static bool InitializedOnce_;
     static std::unique_ptr<Runtime> Instance_;
-    static Runtime* getInstance();
-    friend class RuntimeManager;
 };
