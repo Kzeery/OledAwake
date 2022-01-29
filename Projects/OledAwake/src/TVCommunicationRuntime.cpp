@@ -9,21 +9,20 @@ namespace net = boost::asio;
 using tcp = boost::asio::ip::tcp;
 
 std::unique_ptr<Runtime> TVCommunicationRuntime::Instance_ = nullptr;
-
-Runtime* TVCommunicationRuntime::getInstance()
+bool TVCommunicationRuntime::InitializedOnce_ = false;
+Runtime* TVCommunicationRuntime::getInstance(bool newInstance)
 {
-    if (Instance_.get() == nullptr)
+    if (Instance_.get() == nullptr && !InitializedOnce_ && newInstance)
     {
         Instance_ = std::unique_ptr<Runtime>(new TVCommunicationRuntime);
     }
+    InitializedOnce_ = true;
     return Instance_.get();
 }
-
 bool TVCommunicationRuntime::init()
 {
     ensureTVMacAddress();
-
-    HMODULE hDLL = LoadLibrary(L"Shlwapi.dll");
+    LibraryWrapper hDLL = LoadLibrary(L"Shlwapi.dll");
     if (hDLL == NULL)
         SET_ERROR_EXIT("Failed to load Shlwapi.dll", false);
 
@@ -31,7 +30,6 @@ bool TVCommunicationRuntime::init()
     if (pathAppend == NULL)
     {
         Utilities::setLastError("Failed to load PathAppendA function");
-        FreeLibrary(hDLL);
         return false;
     }
     CHAR szPath[MAX_PATH];
@@ -42,7 +40,7 @@ bool TVCommunicationRuntime::init()
         pathAppend(szPath, "KeyFile.txt");
         Path_to_KeyFile_ = szPath;
     }
-    FreeLibrary(hDLL);
+
     if (Path_to_KeyFile_.empty())
         SET_ERROR_EXIT("Failed to get KeyFile path", false);
 
@@ -52,7 +50,7 @@ bool TVCommunicationRuntime::init()
             SET_ERROR_EXIT("Failed to setup session key", false);
         if (Key_.empty())
             SET_ERROR_EXIT("Received invalid session key", false)
-        Handshake_ = Utilities::narrow(HANDSHAKE_PAIRED);
+        Handshake_ = Utilities::narrow(PairedHandshake);
         saveKeyToFile();
     }
     initHandshake();
@@ -66,14 +64,14 @@ bool TVCommunicationRuntime::loadKeyFromFile()
     {
         if (std::getline(keyFile, Key_))
         {
-            Handshake_ = Utilities::narrow(HANDSHAKE_PAIRED);
+            Handshake_ = Utilities::narrow(PairedHandshake);
             keyFile.close();
             return true;
         }
         keyFile.close();
     }
     Key_ = "";
-    Handshake_ = Utilities::narrow(HANDSHAKE_NOTPAIRED);
+    Handshake_ = Utilities::narrow(UnpairedHandshake);
     return false;
 }
 
@@ -89,13 +87,13 @@ void TVCommunicationRuntime::saveKeyToFile() const
 
 void TVCommunicationRuntime::initHandshake()
 {
-    size_t ckf = Handshake_.find(HANDSHAKE_IDENTIFIER);
-    Handshake_.replace(ckf, strlen(HANDSHAKE_IDENTIFIER), Key_);
+    size_t ckf = Handshake_.find(HandshakeIdentifier);
+    Handshake_.replace(ckf, strlen(HandshakeIdentifier), Key_);
 }
 
 bool TVCommunicationRuntime::setupSessionKey()
 {
-    std::string host = OLED_TV_IP;
+    std::string host = OledTVIP;
 
     try
     {
@@ -103,7 +101,7 @@ bool TVCommunicationRuntime::setupSessionKey()
         tcp::resolver resolver{ ioc };
         websocket::stream<tcp::socket> ws{ ioc };
         beast::flat_buffer buffer;
-        auto const results = resolver.resolve(host, SERVICE_PORT);
+        auto const results = resolver.resolve(host, ServicePort);
         auto ep = net::connect(ws.next_layer(), results);
         host += ':' + std::to_string(ep.port());
         ws.set_option(websocket::stream_base::decorator(
@@ -137,14 +135,8 @@ bool TVCommunicationRuntime::setupSessionKey()
 bool TVCommunicationRuntime::turnOnDisplay()
 {
     ensureTVMacAddress();
-    WSADATA wsaData;
+    
     int iResult;
-
-    iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
-    if (iResult != NO_ERROR) {
-        Utilities::setLastError("Failed WSAStartup");
-        return false;
-    }
     const char* SendBuf = MacBuffer_.c_str();
     int BufLen = 102;
 
@@ -153,24 +145,21 @@ bool TVCommunicationRuntime::turnOnDisplay()
     SendSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (SendSocket == INVALID_SOCKET) {
         Utilities::setLastError("Failed to initialize socket");
-        WSACleanup();
         return false;
     }
     BOOL val = true;
     if (setsockopt(SendSocket, SOL_SOCKET, SO_BROADCAST, (const char*)&val, sizeof(BOOL)) != 0)
     {
         Utilities::setLastError("Failed to set socket options");
-        WSACleanup();
         return false;
     }
 
     RecvAddr.sin_family = AF_INET;
-    RecvAddr.sin_port = htons(OLED_TV_PORT);
-    iResult = InetPton(AF_INET, TEXT(BROADCAST_ADDRESS), &RecvAddr.sin_addr.s_addr);
+    RecvAddr.sin_port = htons(OledTVPort);
+    iResult = InetPtonA(AF_INET, BroadcastAddress, &RecvAddr.sin_addr.s_addr);
     if (iResult != 1)
     {
         Utilities::setLastError("Failed to convert IP string to address");
-        WSACleanup();
         return false;
     }
 
@@ -179,31 +168,28 @@ bool TVCommunicationRuntime::turnOnDisplay()
     if (iResult == SOCKET_ERROR) {
         Utilities::setLastError("Failed to send socket");
         closesocket(SendSocket);
-        WSACleanup();
         return false;
     }
 
     iResult = closesocket(SendSocket);
     if (iResult == SOCKET_ERROR) {
         Utilities::setLastError("Failed to send socket");
-        WSACleanup();
         return false;
     }
 
-    WSACleanup();
     return true;
 }
 bool TVCommunicationRuntime::sendMessageToTV(const char* input) const
 {
     try
     {
-        std::string host = OLED_TV_IP;
+        std::string host = OledTVIP;
         time_t origtim = time(0);
         net::io_context ioc;
 
         tcp::resolver resolver{ ioc };
         websocket::stream<tcp::socket> ws{ ioc };
-        auto const results = resolver.resolve(host, SERVICE_PORT);
+        auto const results = resolver.resolve(host, ServicePort);
         auto ep = net::connect(ws.next_layer(), results);
         host += ':' + std::to_string(ep.port());
         ESCAPE_TOO_MUCH_TIME(origtim, 10);
@@ -242,33 +228,31 @@ bool TVCommunicationRuntime::switchInput(Inputs input) const
 
 bool TVCommunicationRuntime::turnOffDisplay() const
 {
-    return sendMessageToTV(TURN_OFF_TV_MESSAGE);
+    return sendMessageToTV(TurnOffTVMessage);
 }
 
 bool TVCommunicationRuntime::ensureTVMacAddress()
 {
     if (MacBuffer_.size() > 6) return true;
 
-    char mac[6];
-    in_addr destIP;
-    in_addr srcIP;
+    char mac[6]{ 0 };
+    in_addr destIP{ 0 };
+    in_addr srcIP{ 0 };
     srcIP.s_addr = INADDR_ANY;
 
-    ULONG macAddress[2];
+    ULONG macAddress[2]{ 0 };
     ULONG physicalAddressLength = 6;
 
-    WSADATA wsaData;
 
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
+    if (WSAStartup(MAKEWORD(2, 2), &WSAData_) != 0)
     {
         Utilities::setLastError("Error starting WSA");
         return false;	//Return 1 on error
     }
-
-    HINSTANCE hDLL = LoadLibrary(L"iphlpapi.dll");
-    if (hDLL == NULL)
+    WSASuccessful_ = true;
+    LibraryWrapper hDLL(LoadLibrary(L"iphlpapi.dll"));
+    if (!hDLL)
     {
-        WSACleanup();
         Utilities::setLastError("Error loading iphlapi library");
         return false;
     }
@@ -276,17 +260,14 @@ bool TVCommunicationRuntime::ensureTVMacAddress()
 
     if (SendArp == NULL)
     {
-        WSACleanup();
-        FreeLibrary(hDLL);
         Utilities::setLastError("Error getting process address of GetArp function");
         return false;
     }
 
-    int iResult = InetPton(AF_INET, TEXT(OLED_TV_IP), &destIP.s_addr);
+    int iResult = InetPtonA(AF_INET, OledTVIP, &destIP.s_addr);
     if (iResult != 1)
     {
-        FreeLibrary(hDLL);
-        LPSTR buff;
+        LPSTR buff{ 0 };
         DWORD dw = GetLastError();
         FormatMessageA(
             FORMAT_MESSAGE_ALLOCATE_BUFFER |
@@ -299,14 +280,11 @@ bool TVCommunicationRuntime::ensureTVMacAddress()
             0, NULL);
         Utilities::setLastError(buff);
         LocalFree(buff);
-        WSACleanup();
         return false;
     }
 
     DWORD ret = SendArp(destIP, srcIP, macAddress, &physicalAddressLength);
 
-    FreeLibrary(hDLL);
-    WSACleanup();
 
     if (ret != NO_ERROR || physicalAddressLength < 6)
     {

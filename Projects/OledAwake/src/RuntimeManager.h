@@ -1,7 +1,7 @@
 #pragma once
 #include "ClientServerRuntime.h"
 #include <vector>
-typedef Runtime* (*GetRuntimeInstanceType)(void);
+typedef Runtime* (*GetRuntimeInstanceType)(bool);
 enum RuntimeIndices
 {
     TVCommunicationRuntimeIndex = 0,
@@ -11,7 +11,7 @@ class RuntimeManager
 {
 public:
     static bool initAllRuntimes();
-
+    static void destroy();
     static TVCommunicationRuntime* getTVCommunicationRuntime();
     static ClientServerRuntime* getClientServerRuntime();
 

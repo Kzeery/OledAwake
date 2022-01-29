@@ -9,15 +9,13 @@
 #pragma comment(lib, "advapi32.lib")
 #define SVCNAME TEXT("OledAwake")
 
-HDEVNOTIFY deviceNotifyHandle = nullptr;
-HPOWERNOTIFY powerNotifyHandle = nullptr;
+HDEVNOTIFY deviceNotifyHandle{ 0 };
+HPOWERNOTIFY powerNotifyHandle{ 0 };
 
 SERVICE_STATUS          gSvcStatus;
 SERVICE_STATUS_HANDLE   gSvcStatusHandle;
-HANDLE                  ghSvcStopEvent = NULL;
 
-GUID mouseDeviceGUID = { 0x378de44c, 0x56ef, 0x11d1,
-0xbc, 0x8c, 0x00, 0xa0, 0xc9, 0x14, 0x05, 0xdd };
+
 std::wstring mouseDeviceName = L"\\\\?\\HID#VID_046D&PID_C539&MI_01&Col01#b&edd03df&0&0000#{378de44c-56ef-11d1-bc8c-00a0c91405dd}";
 
 bool displayTurnedOffByService = false;
@@ -25,7 +23,7 @@ bool displayTurnedOffByService = false;
 VOID SvcInstall(void);
 DWORD WINAPI SvcCtrlHandler(DWORD, DWORD, LPVOID, LPVOID);
 VOID WINAPI SvcMain(DWORD, LPTSTR*);
-BOOL HandleEvents(HANDLE);
+BOOL HandleEvents();
 VOID CleanResources();
 VOID ReportSvcStatus(DWORD, DWORD, DWORD);
 VOID SvcInit(DWORD, LPTSTR*);
@@ -152,9 +150,7 @@ VOID WINAPI SvcMain(DWORD dwArgc, LPTSTR* lpszArgv)
 
     gSvcStatus.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
     gSvcStatus.dwServiceSpecificExitCode = 0;
-    gSvcStatus.dwControlsAccepted |= SERVICE_CONTROL_PRESHUTDOWN;
     // Report initial status to the SCM
-
     ReportSvcStatus(SERVICE_START_PENDING, NO_ERROR, 3000);
 
     // Perform service-specific initialization and work.
@@ -165,20 +161,29 @@ VOID WINAPI SvcMain(DWORD dwArgc, LPTSTR* lpszArgv)
 #define CLEAN_AND_EXIT(msg) {  SvcReportEvent(msg); CleanResources(); return; }
 VOID SvcInit(DWORD dwArgc, LPTSTR* lpszArgv)
 {
-    bool result = RuntimeManager::initAllRuntimes();
-    if (!result)
+    for (int i = 0; i < eventsSize; ++i)
+    {
+        Utilities::events[i] = CreateEvent(NULL, FALSE, FALSE, NULL);
+        if (!Utilities::events[i])
+            CLEAN_AND_EXIT(TEXT("CreateEvent"));
+    }
+
+    if (!RuntimeManager::initAllRuntimes())
         CLEAN_AND_EXIT(Utilities::getLastError());
-
-    powerNotifyHandle = RegisterPowerSettingNotification(gSvcStatusHandle, &GUID_CONSOLE_DISPLAY_STATE, DEVICE_NOTIFY_SERVICE_HANDLE);
-    if (powerNotifyHandle == NULL)
-        CLEAN_AND_EXIT(TEXT("RegisterPowerSettingNotification"));
-
+    
     
     ReportSvcStatus(SERVICE_START_PENDING, NO_ERROR, 0);
     // Initialize pretty much everything in the utilities
-    
+    powerNotifyHandle = RegisterPowerSettingNotification(gSvcStatusHandle, &GUID_CONSOLE_DISPLAY_STATE, DEVICE_NOTIFY_SERVICE_HANDLE);
+    if (!powerNotifyHandle)
+        CLEAN_AND_EXIT(TEXT("RegisterPowerSettingNotification"));
+
     if (RuntimeManager::getClientServerRuntime()->isDeviceManager())
     {
+        GUID mouseDeviceGUID = { 0x378de44c, 0x56ef, 0x11d1,
+                                 0xbc, 0x8c, 0x00, 0xa0, 0xc9, 
+                                 0x14, 0x05, 0xdd };
+
         DEV_BROADCAST_DEVICEINTERFACE NotificationFilter;
         ZeroMemory(&NotificationFilter, sizeof(NotificationFilter));
         NotificationFilter.dbcc_size = sizeof(DEV_BROADCAST_DEVICEINTERFACE);
@@ -188,62 +193,60 @@ VOID SvcInit(DWORD dwArgc, LPTSTR* lpszArgv)
         if (deviceNotifyHandle == NULL)
             CLEAN_AND_EXIT(TEXT("RegisterDeviceNotifiaction"));
     }
-    
-    ReportSvcStatus(SERVICE_START_PENDING, NO_ERROR, 0);
-
-    ghSvcStopEvent = CreateEvent(
-        NULL,    // default security attributes
-        TRUE,    // manual reset event
-        FALSE,   // not signaled
-        NULL);   // no name
-
-    if (ghSvcStopEvent == NULL)
-        CLEAN_AND_EXIT(TEXT("CreateghSvcStopEvent"));
-
-
-
     // Report running status when initialization is complete.
-
     ReportSvcStatus(SERVICE_RUNNING, NO_ERROR, 0);
 
+    
     // TO_DO: Perform work until service stops.
-    HandleEvents(ghSvcStopEvent);
+    HandleEvents();
         
     return CleanResources();
     
 }
 
-BOOL HandleEvents(HANDLE stopEvent)
+BOOL HandleEvents()
 {
     TVCommunicationRuntime* communications = RuntimeManager::getTVCommunicationRuntime();
     ClientServerRuntime* clientServerRuntime = RuntimeManager::getClientServerRuntime();
-    std::vector<HANDLE> events;
-    for (int i = 0; i < EVENT_NAMES_SIZE; ++i)
-    {
-        HANDLE event = CreateEvent(NULL, TRUE, FALSE, Utilities::eventNames[i]);
-        if (!event)
-        {
-            for (const auto& createdEvent : events)
-                CloseHandle(event);
-            return FALSE;
-        }
-        events.push_back(event);
 
-    }
-    events.push_back(stopEvent);
     while (true)
     {
-        DWORD index = WaitForMultipleObjects(EVENT_NAMES_SIZE + 1, events.data(), FALSE, INFINITE) - WAIT_OBJECT_0;
-        switch (index)
+        DWORD index = WaitForMultipleObjects(eventsSize, (HANDLE*)Utilities::events, FALSE, INFINITE);
+        switch (index - WAIT_OBJECT_0)
         {
         case MONITOR_ON_EVENT_INDEX: // Turn monitor on
+        {
+            ULONGLONG timeSinceLastUserInput = 0;
+            if (clientServerRuntime->getTimeSinceLastUserInput(timeSinceLastUserInput))
+            {
+                if (timeSinceLastUserInput > 90000)
+                {
+                    displayTurnedOffByService = true;
+                    if (clientServerRuntime->postWindowsTurnOffDisplayMessage())
+                    {
+                        std::wstring msg = L"Posted message to windows to turn off display because no user input detected recently.";
+                        SvcReportInfo(msg);
+                    }
+                    else
+                    {
+                        displayTurnedOffByService = false;
+                        SvcReportInfo();
+                    }
+                    break;
+                }
+            }
+            else
+                SvcReportInfo();
+
+
             clientServerRuntime->setCurrentMonitorState(MonitorState::MONITOR_ON);
-            for (int i = 0; i < 10; ++i)
+            for (int i = 0; i < 3; ++i)
             {
                 if (!communications->turnOnDisplay()) SvcReportInfo();
                 std::this_thread::sleep_for(std::chrono::milliseconds(25));
             }
             break;
+        }
         case MONITOR_OFF_EVENT_INDEX: // Turn monitor off
             clientServerRuntime->setCurrentMonitorState(MonitorState::MONITOR_OFF);
             if (clientServerRuntime->getOtherMonitorState() != MonitorState::MONITOR_ON)
@@ -251,7 +254,7 @@ BOOL HandleEvents(HANDLE stopEvent)
             break;
         case SERVER_EXITED_EVENT_INDEX: // Client/server thread exited
         {
-            SetEvent(events[EXIT_SERVICE_EVENT_INDEX]);
+            SetEvent(Utilities::events[EXIT_SERVICE_EVENT_INDEX]);
             break;
         }
         case SWITCH_HDMI1_EVENT_INDEX: // Switch to HDMI 1
@@ -263,11 +266,8 @@ BOOL HandleEvents(HANDLE stopEvent)
                 SvcReportEvent(Utilities::getLastError());
             break;
         default: // received stop event
-            for (auto& event : events)
-                CloseHandle(event);
             return FALSE;
         }
-        ResetEvent(events[index]);
     }
 }
 
@@ -285,7 +285,7 @@ VOID ReportSvcStatus(DWORD dwCurrentState,
 
     if (dwCurrentState == SERVICE_START_PENDING)
         gSvcStatus.dwControlsAccepted = 0;
-    else gSvcStatus.dwControlsAccepted = SERVICE_ACCEPT_STOP;
+    else gSvcStatus.dwControlsAccepted = SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_PRESHUTDOWN;
 
     if ((dwCurrentState == SERVICE_RUNNING) ||
         (dwCurrentState == SERVICE_STOPPED))
@@ -293,13 +293,17 @@ VOID ReportSvcStatus(DWORD dwCurrentState,
     else gSvcStatus.dwCheckPoint = dwCheckPoint++;
 
     // Report the status of the service to the SCM.
-    SetServiceStatus(gSvcStatusHandle, &gSvcStatus);
+    if (SetServiceStatus(gSvcStatusHandle, &gSvcStatus) == 0)
+    {
+        DWORD err = GetLastError();
+        printf("%d\n", err);
+    }
 }
 
 DWORD WINAPI SvcCtrlHandler(DWORD dwCtrl, DWORD dwEventType, LPVOID lpEventData, LPVOID lpContext)
 {
     // Handle the requested control code. 
-    std::wstring eventName = L"";
+    int eventIndex = UNKNOWN_EVENT_INDEX;
     switch (dwCtrl)
     {
     case SERVICE_CONTROL_STOP:
@@ -307,56 +311,35 @@ DWORD WINAPI SvcCtrlHandler(DWORD dwCtrl, DWORD dwEventType, LPVOID lpEventData,
 
         // Signal the service to stop.
 
-        SetEvent(ghSvcStopEvent);
+        SetEvent(Utilities::events[EXIT_SERVICE_EVENT_INDEX]);
         ReportSvcStatus(gSvcStatus.dwCurrentState, NO_ERROR, 0);
 
         return NO_ERROR;
     case SERVICE_CONTROL_POWEREVENT:
     {
+        if (dwEventType != PBT_POWERSETTINGCHANGE) return NO_ERROR;
 
         PPOWERBROADCAST_SETTING pbs = (PPOWERBROADCAST_SETTING)lpEventData;
+        if (pbs->PowerSetting != GUID_CONSOLE_DISPLAY_STATE) return NO_ERROR;
+
         switch (static_cast<MonitorState>(*pbs->Data))
         {
         case MonitorState::MONITOR_ON:
-        {
-            ULONGLONG timeSinceLastUserInput = 0;
-            if (RuntimeManager::getClientServerRuntime()->getTimeSinceLastUserInput(timeSinceLastUserInput))
-            {
-                if (timeSinceLastUserInput > 90000)
-                {
-                    if (RuntimeManager::getClientServerRuntime()->postWindowsTurnOffDisplayMessage())
-                    {
-                        std::wstring msg = L"Posted message to windows to turn off display because no user input detected recently.";
-                        SvcReportInfo(msg);
-                        displayTurnedOffByService = true;
-                        break;
-                    }
-                    else
-                        SvcReportInfo();
-                }
-            }
-            else
-                SvcReportInfo();
-            
-            eventName = Utilities::eventNames[MONITOR_ON_EVENT_INDEX];
+            eventIndex = MONITOR_ON_EVENT_INDEX;
             break;
-        }
-        break;
         case MonitorState::MONITOR_OFF:
-            eventName = displayTurnedOffByService ? L"" : Utilities::eventNames[MONITOR_OFF_EVENT_INDEX];
+            if (!displayTurnedOffByService)
+                eventIndex = MONITOR_OFF_EVENT_INDEX;
             displayTurnedOffByService = false;
             break;
         default:
-            break;
+            return NO_ERROR;
         }
-        if (eventName.empty()) return NO_ERROR;
 
-        HANDLE event = OpenEvent(EVENT_ALL_ACCESS, FALSE, eventName.c_str());
-        if (event == NULL) return GetLastError();
+        if (eventIndex == UNKNOWN_EVENT_INDEX) return NO_ERROR;
 
-        SetEvent(event);
-        CloseHandle(event);
 
+        SetEvent(Utilities::events[eventIndex]);
         return NO_ERROR;
     }
     case SERVICE_CONTROL_DEVICEEVENT:
@@ -367,32 +350,28 @@ DWORD WINAPI SvcCtrlHandler(DWORD dwCtrl, DWORD dwEventType, LPVOID lpEventData,
         {
         case DBT_DEVICEARRIVAL:
             if (deviceInfo->dbcc_name == mouseDeviceName)
-                eventName = Utilities::eventNames[SWITCH_HDMI1_EVENT_INDEX];
+                eventIndex = SWITCH_HDMI1_EVENT_INDEX;
             break;
 
 
         case DBT_DEVICEREMOVECOMPLETE:
             if (deviceInfo->dbcc_name == mouseDeviceName)
-                eventName = Utilities::eventNames[SWITCH_HDMI2_EVENT_INDEX];
+                eventIndex = SWITCH_HDMI2_EVENT_INDEX;
             break;
         default:
             break;
         }
 
-        if (eventName.empty()) return NO_ERROR;
+        if (eventIndex == UNKNOWN_EVENT_INDEX) return NO_ERROR;
 
-        HANDLE event = OpenEvent(EVENT_ALL_ACCESS, FALSE, eventName.c_str());
-        if (event == NULL) return GetLastError();
-
-        SetEvent(event);
-        CloseHandle(event);
+        SetEvent(Utilities::events[eventIndex]);
         return NO_ERROR;
 
     }
     case SERVICE_CONTROL_PRESHUTDOWN:
         ReportSvcStatus(SERVICE_STOP_PENDING, NO_ERROR, 0);
 
-        SetEvent(ghSvcStopEvent);
+        SetEvent(Utilities::events[EXIT_SERVICE_EVENT_INDEX]);
         ReportSvcStatus(gSvcStatus.dwCurrentState, NO_ERROR, 0);
         return NO_ERROR;
         break;
@@ -514,9 +493,12 @@ VOID SvcReportEvent(LPTSTR szFunction)
 
 VOID CleanResources()
 {
+    RuntimeManager::destroy();
     if (powerNotifyHandle)
+    {
         UnregisterPowerSettingNotification(powerNotifyHandle);
+    }
     if (deviceNotifyHandle)
-        UnregisterPowerSettingNotification(deviceNotifyHandle);
+        UnregisterDeviceNotification(deviceNotifyHandle);
     ReportSvcStatus(SERVICE_STOPPED, NO_ERROR, 0);
 }

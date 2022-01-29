@@ -3,14 +3,7 @@
 #include <codecvt>
 #include <locale>
 std::string Utilities::LastError_ = "";
-wchar_t* Utilities::eventNames[EVENT_NAMES_SIZE] = 
-{
-    L"MonitorOn",
-    L"MonitorOff",
-    L"SwitchToHDMI1",
-    L"SwitchToHDMI2",
-    L"ClientServerExitedThread"
-};
+HandleWrapper Utilities::events[eventsSize]{0};
 std::wstring Utilities::getLastError()
 {
     std::wstring ret = widen(LastError_);
@@ -46,7 +39,7 @@ std::string Utilities::narrow(std::wstring sInput)
     return out;
 }
 
-ULL Utilities::absoluteDiff(const ULL& a, const ULL& b)
+ULONGLONG Utilities::absoluteDiff(const ULONGLONG& a, const ULONGLONG& b)
 {
     return a > b ? a - b : b - a;
 }

@@ -4,15 +4,18 @@
 #include "PipeCommunication.h"
 typedef ULONG(WINAPI* pGetAdaptersInfo)(PIP_ADAPTER_INFO, PULONG);
 std::unique_ptr<Runtime> ClientServerRuntime::Instance_ = nullptr;
+bool ClientServerRuntime::InitializedOnce_ = false;
+
 DWORD WINAPI sendMessageToServer(_In_ LPVOID);
 
-ClientServerRuntime::~ClientServerRuntime()
+std::unique_ptr<Runtime>& ClientServerRuntime::destroy()
 {
-    sendMessageToServerTimeout(RemoteRequest::QUIT, nullptr, true, 200);
+    sendMessageToServerTimeout(RemoteRequest::SHUTDOWN_SERVER, nullptr, true, 200);
     if (ServerThread_ != nullptr && ServerThread_->joinable())
     {
         ServerThread_->join();
     }
+    return Instance_;
 }
 
 void ClientServerRuntime::sendMessageToServerTimeout(RemoteRequest req, MonitorState* res, bool self, int maxTimeout) const
@@ -22,49 +25,44 @@ void ClientServerRuntime::sendMessageToServerTimeout(RemoteRequest req, MonitorS
     serverinfo.req = req;
     serverinfo.res = res;
 
-    HANDLE hThread = CreateThread(NULL, 0, sendMessageToServer, &serverinfo, 0, NULL);
+    HandleWrapper hThread(CreateThread(NULL, 0, sendMessageToServer, &serverinfo, 0, NULL));
     if (hThread)
-    {
         WaitForSingleObject(hThread, maxTimeout);
-        CloseHandle(hThread);
-    }
 }
 
-Runtime* ClientServerRuntime::getInstance()
+Runtime* ClientServerRuntime::getInstance(bool newInstance)
 {
-    if (Instance_.get() == nullptr)
+    if (Instance_.get() == nullptr && !InitializedOnce_ && newInstance)
     {
         Instance_ = std::unique_ptr<Runtime>(new ClientServerRuntime);
     }
+    InitializedOnce_ = true;
     return Instance_.get();
 }
+
 
 bool ClientServerRuntime::init()
 {
     if (!ensureServerEnvironment()) return false;
 
-
-    HANDLE serverRunningEvent = CreateEvent(NULL, TRUE, FALSE, L"ServerRunning");
+    
+    HandleWrapper serverRunningEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
     if (serverRunningEvent == NULL)
     {
         Utilities::setLastError("Could not create Server Running event");
         return false;
     }
-
-    ServerThread_ = std::unique_ptr<std::thread>(new std::thread(&ClientServerRuntime::initServer, this));
+    ServerThread_ = std::unique_ptr<std::thread>(new std::thread(&ClientServerRuntime::initServer, this, serverRunningEvent));
     if (WaitForSingleObject(serverRunningEvent, 5000) == WAIT_TIMEOUT)
     {
         ServerThread_->join();
         ServerThread_.reset(nullptr);
         Utilities::setLastError("Server running event timed out!");
-        CloseHandle(serverRunningEvent);
         return false;
     }
-    CloseHandle(serverRunningEvent);
-    
+
     return true;
 }
-
 MonitorState ClientServerRuntime::getOtherMonitorState() const
 {
     MonitorState res = MonitorState::UNKNOWN;
@@ -85,7 +83,7 @@ void ClientServerRuntime::setCurrentMonitorState(MonitorState state)
 bool ClientServerRuntime::ensureServerEnvironment()
 {
     if (!LocalIP_.empty()) return true;
-    HMODULE hDLL = LoadLibrary(L"Iphlpapi.dll");
+    LibraryWrapper hDLL(LoadLibrary(L"Iphlpapi.dll"));
     if (!hDLL)
     {
         Utilities::setLastError("EnsureServerEnvironment - Failed to load Iphlpapi.dll library");
@@ -95,7 +93,6 @@ bool ClientServerRuntime::ensureServerEnvironment()
     pGetAdaptersInfo getAdaptersInfo = (pGetAdaptersInfo)GetProcAddress(hDLL, "GetAdaptersInfo");
     if (!getAdaptersInfo)
     {
-        FreeLibrary(hDLL);
         Utilities::setLastError("EnsureServerEnvironment - failed to load GetAdaptersInfo function from DLL");
         return false;
     }
@@ -128,37 +125,29 @@ bool ClientServerRuntime::ensureServerEnvironment()
         if (ipString.size() > 3 && ipString.substr(0, 3) == "192")
             LocalIP_ = std::move(ipString);
     }
-    FreeLibrary(hDLL);
     if (LocalIP_.empty())
     {
         Utilities::setLastError("Something went wrong while trying to get local ip address");
         return false;
     }
-    if (LocalIP_ == IP_ADDRESS_A)
+    if (LocalIP_ == IPAddressA)
     {
-        OtherIP_ = IP_ADDRESS_B;
+        OtherIP_ = IPAddressB;
         IsDeviceManager_ = true;
     }
     else
     {
-        OtherIP_ = IP_ADDRESS_A;
+        OtherIP_ = IPAddressA;
         IsDeviceManager_ = false;
     }
     return true;
 }
 
-bool ClientServerRuntime::initServer()
+bool ClientServerRuntime::initServer(HandleWrapper& hEvent) const
 {
-    WSADATA wsaData;
 
     int iResult;
     struct addrinfo* result = NULL, * ptr = NULL, hints;
-
-    // Initialize Winsock
-    iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
-    if (iResult != 0) {
-        return false;
-    }
 
     ZeroMemory(&hints, sizeof(hints));
     hints.ai_family = AF_INET;
@@ -167,9 +156,8 @@ bool ClientServerRuntime::initServer()
     hints.ai_flags = AI_PASSIVE;
 
     // Resolve the local address and port to be used by the server
-    iResult = getaddrinfo(LocalIP_.c_str(), SERVICE_PORT, &hints, &result);
+    iResult = getaddrinfo(LocalIP_.c_str(), ServicePort, &hints, &result);
     if (iResult != 0) {
-        WSACleanup();
         return false;
     }
 
@@ -178,7 +166,6 @@ bool ClientServerRuntime::initServer()
     ListenSocket = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
     if (ListenSocket == INVALID_SOCKET) {
         freeaddrinfo(result);
-        WSACleanup();
         return false;
     }
 
@@ -186,14 +173,12 @@ bool ClientServerRuntime::initServer()
     if (iResult == SOCKET_ERROR) {
         freeaddrinfo(result);
         closesocket(ListenSocket);
-        WSACleanup();
         return false;
     }
 
     if (listen(ListenSocket, SOMAXCONN) == SOCKET_ERROR) {
         freeaddrinfo(result);
         closesocket(ListenSocket);
-        WSACleanup();
         return false;
     }
 
@@ -201,16 +186,8 @@ bool ClientServerRuntime::initServer()
     SOCKET ClientSocket;
     ClientSocket = INVALID_SOCKET;
 
-    HANDLE serverRunningEvent = OpenEvent(EVENT_ALL_ACCESS, FALSE, L"ServerRunning");
-    if (serverRunningEvent == NULL)
-    {
-        closesocket(ListenSocket);
-        WSACleanup();
-        return false;
-    }
-
-    SetEvent(serverRunningEvent);
-    CloseHandle(serverRunningEvent);
+    SetEvent(hEvent);
+    bool needToExit = false;
     while (true)
     {
         ClientSocket = accept(ListenSocket, NULL, NULL);
@@ -221,8 +198,7 @@ bool ClientServerRuntime::initServer()
         RemoteRequest clientRequest = RemoteRequest::REQUEST_UNKNOWN;
         MonitorState serverResponse = MonitorState::UNKNOWN;
         int iSendResult;
-        bool needToExit = false;
-        iResult = recv(ClientSocket, (char*)&clientRequest, REMOTE_IN_BUFFER_SIZE, 0);
+        iResult = recv(ClientSocket, (char*)&clientRequest, RemoteInBufferSize, 0);
         if (iResult > 0) {
 
             switch (clientRequest)
@@ -230,7 +206,7 @@ bool ClientServerRuntime::initServer()
             case RemoteRequest::GET_MONITOR_STATE:
                 serverResponse = State_;
                 break;
-            case RemoteRequest::QUIT:
+            case RemoteRequest::SHUTDOWN_SERVER:
                 closesocket(ClientSocket);
                 needToExit = true;
                 break;
@@ -241,7 +217,7 @@ bool ClientServerRuntime::initServer()
             if (needToExit)
                 break;
 
-            iSendResult = send(ClientSocket, (char*)&serverResponse, REMOTE_OUT_BUFFER_SIZE, 0);
+            iSendResult = send(ClientSocket, (char*)&serverResponse, RemoteOutBufferSize, 0);
             closesocket(ClientSocket);
             if (iSendResult == SOCKET_ERROR) {
                 break;
@@ -252,12 +228,8 @@ bool ClientServerRuntime::initServer()
     }
     
     closesocket(ListenSocket);
-    WSACleanup();
-
-    HANDLE serverExitedEvent = OpenEvent(EVENT_ALL_ACCESS, FALSE, Utilities::eventNames[SERVER_EXITED_EVENT_INDEX]);
-    if (!serverExitedEvent) return false;
-    SetEvent(serverExitedEvent);
-    CloseHandle(serverExitedEvent);
+    if(!needToExit) // Something catastrophic happened and this is not occuring as a part of the program being requested to stop.
+        SetEvent(Utilities::events[SERVER_EXITED_EVENT_INDEX]);
     return true;
 }
 
@@ -341,14 +313,8 @@ bool ClientServerRuntime::postWindowsTurnOffDisplayMessage() const
 DWORD WINAPI sendMessageToServer(_In_ LPVOID sendInfo)
 {
     SendServerInfoStruct* info = (SendServerInfoStruct*)sendInfo;
-    WSADATA wsaData;
     int iResult;
 
-    // Initialize Winsock
-    iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
-    if (iResult != 0) {
-        return 1;
-    }
 
     struct addrinfo* result = NULL,
         * ptr = NULL,
@@ -360,9 +326,8 @@ DWORD WINAPI sendMessageToServer(_In_ LPVOID sendInfo)
     hints.ai_protocol = IPPROTO_TCP;
 
 
-    iResult = getaddrinfo(info->ip.c_str(), SERVICE_PORT, &hints, &result);
+    iResult = getaddrinfo(info->ip.c_str(), ServicePort, &hints, &result);
     if (iResult != 0) {
-        WSACleanup();
         return 1;
     }
 
@@ -376,7 +341,6 @@ DWORD WINAPI sendMessageToServer(_In_ LPVOID sendInfo)
 
     if (ConnectSocket == INVALID_SOCKET) {
         freeaddrinfo(result);
-        WSACleanup();
         return 1;
     }
 
@@ -389,15 +353,13 @@ DWORD WINAPI sendMessageToServer(_In_ LPVOID sendInfo)
     freeaddrinfo(result);
 
     if (ConnectSocket == INVALID_SOCKET) {
-        WSACleanup();
         return 1;
     }
 
     // Send an initial buffer
-    iResult = send(ConnectSocket, (char*)&info->req, REMOTE_IN_BUFFER_SIZE, 0);
+    iResult = send(ConnectSocket, (char*)&info->req, RemoteInBufferSize, 0);
     if (iResult == SOCKET_ERROR) {
         closesocket(ConnectSocket);
-        WSACleanup();
         return 1;
     }
 
@@ -407,13 +369,11 @@ DWORD WINAPI sendMessageToServer(_In_ LPVOID sendInfo)
 
     if (iResult == SOCKET_ERROR) {
         closesocket(ConnectSocket);
-        WSACleanup();
         return 1;
     }
-    if (info->req != RemoteRequest::QUIT)
-        iResult = recv(ConnectSocket, (char*)info->res, REMOTE_OUT_BUFFER_SIZE, 0);
+    if (info->req != RemoteRequest::SHUTDOWN_SERVER)
+        iResult = recv(ConnectSocket, (char*)info->res, RemoteOutBufferSize, 0);
 
     closesocket(ConnectSocket);
-    WSACleanup();
     return 0;
 }
