@@ -1,10 +1,12 @@
 ﻿#pragma once
 #include <SDKDDKVer.h>
 #include <string>
+#include <type_traits>
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <Windows.h>
+#include <winsock2.h>
 enum
 {
     UNKNOWN_EVENT_INDEX = -1,
@@ -16,41 +18,52 @@ enum
     EXIT_SERVICE_EVENT_INDEX = 5
 };
 constexpr unsigned int eventsSize = EXIT_SERVICE_EVENT_INDEX + 1;
-
-class HandleWrapper
+template <typename T>
+class Object
 {
 public:
+    Object(T obj) : Obj_(obj) {}
+    Object()  { init(); }
+    ~Object() { deleteObj(); }
 
-    HandleWrapper() : Obj_(nullptr) {};
-    HandleWrapper(HANDLE hEvent) : Obj_(hEvent) {};
-    ~HandleWrapper() 
+    void reset()
     {
-        if(Obj_)
-            CloseHandle(Obj_);
-    };
-    operator HANDLE() const { return Obj_; };
-    HandleWrapper& operator=(const HANDLE& hEvent) { Obj_ = hEvent; return *this; };
+        deleteObj();
+        init();
+    }
+
+    operator T() const              { return Obj_; };
+    Object& operator=(const T& obj) { Obj_ = obj; return *this; };
+
+    Object& operator=(const Object&) = delete;
+    Object(const Object&) = delete;
 
 private:
-    HANDLE Obj_;    
-};
-
-class LibraryWrapper
-{
-public:
-
-    LibraryWrapper() : Obj_(nullptr) {};
-    LibraryWrapper(HINSTANCE hEvent) : Obj_(hEvent) {};
-    ~LibraryWrapper()
+    void init()
     {
-        if(Obj_)
-            FreeLibrary(Obj_);
-    };
-    operator HINSTANCE() const { return Obj_; };
-    LibraryWrapper& operator=(const HINSTANCE& hEvent) { Obj_ = hEvent; return *this; };
+        if constexpr (std::is_same<T, SOCKET>::value)
+            Obj_ = INVALID_SOCKET;
+        else
+            Obj_ = NULL;
+    }
+
+    void deleteObj()
+    {
+        if constexpr (std::is_same<T, HANDLE>::value)
+            if (Obj_)
+                CloseHandle(Obj_);
+
+        else if constexpr (std::is_same<T, HINSTANCE>::value)
+            if (Obj_)
+                FreeLibrary(Obj_);
+
+        else if constexpr (std::is_same<T, SOCKET>::value)
+            if (Obj_ != INVALID_SOCKET)
+                closesocket(Obj_);
+    }
 
 private:
-    HINSTANCE Obj_;
+    T Obj_;
 };
 
 class Utilities
@@ -60,9 +73,8 @@ public:
     [[nodiscard]] static std::string narrow(std::wstring sInput);
     [[nodiscard]] static std::wstring widen(std::string& str);
     [[nodiscard]] static std::wstring getLastError();
-    [[nodiscard]] static ULONGLONG absoluteDiff(const ULONGLONG& a, const ULONGLONG& b);
     static void setLastError(std::string error);
-    static HandleWrapper events[eventsSize];
+    static Object<HANDLE> events[eventsSize];
 
     
 private:

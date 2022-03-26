@@ -29,13 +29,15 @@ typedef DWORD(_cdecl* SendArpType)(IN_ADDR, IN_ADDR, PVOID, PULONG);
 
 class TVCommunicationRuntime : public Runtime
 {
+    struct TVCToken {};
 public:
+    TVCommunicationRuntime(TVCToken) : WSAData_(WSADATA()) {};
+    TVCommunicationRuntime() = delete;
     bool turnOffDisplay() const;
     bool turnOnDisplay();
     bool switchInput(Inputs) const;
     static Runtime* getInstance(bool);
 private:
-    TVCommunicationRuntime(): WSAData_(WSADATA()) {};
     ~TVCommunicationRuntime() {  };
     bool loadKeyFromFile();
     bool setupSessionKey();
@@ -44,8 +46,8 @@ private:
     bool ensureTVMacAddress();
     bool sendMessageToTV(const char*) const;
 
-    bool init();
-    std::unique_ptr<Runtime>& destroy() { if(WSASuccessful_) WSACleanup(); return Instance_; }
+    bool init() override;
+    std::unique_ptr<Runtime>& destroy() override { if (WSASuccessful_) WSACleanup(); return Instance_; }
     std::string Key_;
     std::string Handshake_;
 
@@ -55,4 +57,6 @@ private:
     bool WSASuccessful_{ false };
     static bool InitializedOnce_;
     static std::unique_ptr<Runtime> Instance_;
+
+    friend std::unique_ptr<TVCommunicationRuntime>::deleter_type;
 };

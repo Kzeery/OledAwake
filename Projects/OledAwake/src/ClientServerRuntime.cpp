@@ -6,7 +6,7 @@ typedef ULONG(WINAPI* pGetAdaptersInfo)(PIP_ADAPTER_INFO, PULONG);
 std::unique_ptr<Runtime> ClientServerRuntime::Instance_ = nullptr;
 bool ClientServerRuntime::InitializedOnce_ = false;
 
-DWORD WINAPI sendMessageToServer(_In_ LPVOID);
+unsigned WINAPI sendMessageToServer(void*);
 
 std::unique_ptr<Runtime>& ClientServerRuntime::destroy()
 {
@@ -25,7 +25,7 @@ void ClientServerRuntime::sendMessageToServerTimeout(RemoteRequest req, MonitorS
     serverinfo.req = req;
     serverinfo.res = res;
 
-    HandleWrapper hThread(CreateThread(NULL, 0, sendMessageToServer, &serverinfo, 0, NULL));
+    Object<HANDLE> hThread((HANDLE)_beginthreadex(NULL, 0, &sendMessageToServer, &serverinfo, 0, NULL));
     if (hThread)
         WaitForSingleObject(hThread, maxTimeout);
 }
@@ -34,7 +34,7 @@ Runtime* ClientServerRuntime::getInstance(bool newInstance)
 {
     if (Instance_.get() == nullptr && !InitializedOnce_ && newInstance)
     {
-        Instance_ = std::unique_ptr<Runtime>(new ClientServerRuntime);
+        Instance_ = std::make_unique<ClientServerRuntime>(ClientServerRuntime::CSRToken{});
     }
     InitializedOnce_ = true;
     return Instance_.get();
@@ -46,17 +46,17 @@ bool ClientServerRuntime::init()
     if (!ensureServerEnvironment()) return false;
 
     
-    HandleWrapper serverRunningEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    Object<HANDLE> serverRunningEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
     if (serverRunningEvent == NULL)
     {
         Utilities::setLastError("Could not create Server Running event");
         return false;
     }
-    ServerThread_ = std::unique_ptr<std::thread>(new std::thread(&ClientServerRuntime::initServer, this, serverRunningEvent));
+    ServerThread_ = std::make_unique<std::thread>(&ClientServerRuntime::initServer, this, (HANDLE)serverRunningEvent);
     if (WaitForSingleObject(serverRunningEvent, 5000) == WAIT_TIMEOUT)
     {
+        sendMessageToServerTimeout(RemoteRequest::SHUTDOWN_SERVER, nullptr, true, 5000);
         ServerThread_->join();
-        ServerThread_.reset(nullptr);
         Utilities::setLastError("Server running event timed out!");
         return false;
     }
@@ -83,7 +83,7 @@ void ClientServerRuntime::setCurrentMonitorState(MonitorState state)
 bool ClientServerRuntime::ensureServerEnvironment()
 {
     if (!LocalIP_.empty()) return true;
-    LibraryWrapper hDLL(LoadLibrary(L"Iphlpapi.dll"));
+    Object<HINSTANCE> hDLL(LoadLibrary(L"Iphlpapi.dll"));
     if (!hDLL)
     {
         Utilities::setLastError("EnsureServerEnvironment - Failed to load Iphlpapi.dll library");
@@ -98,14 +98,15 @@ bool ClientServerRuntime::ensureServerEnvironment()
     }
 
     ULONG ulOutBufLen = sizeof(IP_ADAPTER_INFO);
-    std::unique_ptr<char> adapterData(new char[ulOutBufLen]);
+    auto adapterData = std::make_unique<char[]>(ulOutBufLen);
     PIP_ADAPTER_INFO pAdapter = (PIP_ADAPTER_INFO)adapterData.get();
     ULONG ret = 0;
     if ((ret = getAdaptersInfo(pAdapter, &ulOutBufLen)) == ERROR_BUFFER_OVERFLOW)
     {
-        adapterData.reset(new char[ulOutBufLen]);
+        adapterData = std::make_unique<char[]>(ulOutBufLen);
         pAdapter = (PIP_ADAPTER_INFO)adapterData.get();
-        if (getAdaptersInfo(pAdapter, &ulOutBufLen) == NO_ERROR)
+        ret = getAdaptersInfo(pAdapter, &ulOutBufLen);
+        if (ret == ERROR_SUCCESS)
         {
             while (pAdapter)
             {
@@ -118,12 +119,26 @@ bool ClientServerRuntime::ensureServerEnvironment()
                 pAdapter = pAdapter->Next;
             }
         }
+        else
+        {
+            char buf[400];
+            snprintf(buf, 400, "GetAdaptersInfo failed with error code: %lu", ret);
+            Utilities::setLastError(buf);
+            return false;
+        }
     }
-    else if (ret == NO_ERROR)
+    else if (ret == ERROR_SUCCESS)
     {
         std::string ipString = pAdapter->IpAddressList.IpAddress.String;
         if (ipString.size() > 3 && ipString.substr(0, 3) == "192")
             LocalIP_ = std::move(ipString);
+    }
+    else
+    {
+        char buf[400];
+        snprintf(buf, 400, "GetAdaptersInfo failed with error code: %lu", ret);
+        Utilities::setLastError(buf);
+        return false;
     }
     if (LocalIP_.empty())
     {
@@ -143,7 +158,7 @@ bool ClientServerRuntime::ensureServerEnvironment()
     return true;
 }
 
-bool ClientServerRuntime::initServer(HandleWrapper& hEvent) const
+bool ClientServerRuntime::initServer(HANDLE hEvent) const
 {
 
     int iResult;
@@ -161,10 +176,9 @@ bool ClientServerRuntime::initServer(HandleWrapper& hEvent) const
         return false;
     }
 
-    SOCKET ListenSocket = INVALID_SOCKET;
-
+    Object<SOCKET> ListenSocket;
     ListenSocket = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
-    if (ListenSocket == INVALID_SOCKET) {
+    if ((SOCKET)ListenSocket == INVALID_SOCKET) {
         freeaddrinfo(result);
         return false;
     }
@@ -172,24 +186,22 @@ bool ClientServerRuntime::initServer(HandleWrapper& hEvent) const
     iResult = bind(ListenSocket, result->ai_addr, (int)result->ai_addrlen);
     if (iResult == SOCKET_ERROR) {
         freeaddrinfo(result);
-        closesocket(ListenSocket);
         return false;
     }
 
     if (listen(ListenSocket, SOMAXCONN) == SOCKET_ERROR) {
         freeaddrinfo(result);
-        closesocket(ListenSocket);
         return false;
     }
 
     freeaddrinfo(result);
-    SOCKET ClientSocket;
-    ClientSocket = INVALID_SOCKET;
+    Object<SOCKET> ClientSocket;
 
     SetEvent(hEvent);
     bool needToExit = false;
     while (true)
     {
+        ClientSocket.reset();
         ClientSocket = accept(ListenSocket, NULL, NULL);
         if (ClientSocket == INVALID_SOCKET) {
             break;
@@ -207,7 +219,6 @@ bool ClientServerRuntime::initServer(HandleWrapper& hEvent) const
                 serverResponse = State_;
                 break;
             case RemoteRequest::SHUTDOWN_SERVER:
-                closesocket(ClientSocket);
                 needToExit = true;
                 break;
             default:
@@ -218,99 +229,18 @@ bool ClientServerRuntime::initServer(HandleWrapper& hEvent) const
                 break;
 
             iSendResult = send(ClientSocket, (char*)&serverResponse, RemoteOutBufferSize, 0);
-            closesocket(ClientSocket);
             if (iSendResult == SOCKET_ERROR) {
                 break;
             }
         }
-        else
-            closesocket(ClientSocket);
     }
     
-    closesocket(ListenSocket);
     if(!needToExit) // Something catastrophic happened and this is not occuring as a part of the program being requested to stop.
         SetEvent(Utilities::events[SERVER_EXITED_EVENT_INDEX]);
     return true;
 }
 
-bool ClientServerRuntime::getTimeSinceLastUserInput(ULONGLONG& tOut) const
-{
-    Request req = Request::GET_TIME_SINCE_LAST_INPUT;
-    ULONGLONG lastInputTime = 0;
-    DWORD bytesRead = 0;
-    BOOL r = CallNamedPipe(PIPE_NAME, &req, sizeof(Request), &lastInputTime, sizeof(ULONGLONG), &bytesRead, NMPWAIT_NOWAIT);
-    if (!r)
-    {
-        LPVOID buffer;
-        DWORD dw = GetLastError();
-        FormatMessageA(
-            FORMAT_MESSAGE_ALLOCATE_BUFFER |
-            FORMAT_MESSAGE_FROM_SYSTEM |
-            FORMAT_MESSAGE_IGNORE_INSERTS,
-            NULL,
-            dw,
-            MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-            (LPSTR)&buffer,
-            0, NULL);
-        Utilities::setLastError(std::string("CallNamedPipe to OledAwakeApp failed - ") + (LPSTR)buffer);
-        LocalFree(buffer);
-        return false;
-    }
-    else if (lastInputTime == 0 || bytesRead != sizeof(ULONGLONG))
-    {
-        Utilities::setLastError("Oled Awake app returned an invalid value for last input time!");
-        return false;
-    }
-    tOut = lastInputTime;
-    return true;
-}
-
-bool ClientServerRuntime::postWindowsTurnOffDisplayMessage() const
-{
-    Request req = Request::TURN_OFF_DISPLAY;
-    DWORD res = 0;
-    DWORD bytesRead = 0;
-    DWORD r = CallNamedPipe(PIPE_NAME, &req, sizeof(Request), &res, sizeof(DWORD), &bytesRead, NMPWAIT_NOWAIT);
-    std::string err;
-    if (!r || bytesRead != sizeof(DWORD))
-    {
-        LPVOID buffer;
-        DWORD dw = GetLastError();
-        FormatMessageA(
-            FORMAT_MESSAGE_ALLOCATE_BUFFER |
-            FORMAT_MESSAGE_FROM_SYSTEM |
-            FORMAT_MESSAGE_IGNORE_INSERTS,
-            NULL,
-            dw,
-            MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-            (LPSTR)&buffer,
-            0, NULL);
-        Utilities::setLastError(std::string("CallNamedPipe to OledAwakeApp failed - ") + (LPSTR)buffer);
-        LocalFree(buffer);
-        return false;
-    }
-    else if (res != ERROR_SUCCESS)
-    {
-        LPVOID buffer;
-        FormatMessageA(
-            FORMAT_MESSAGE_ALLOCATE_BUFFER |
-            FORMAT_MESSAGE_FROM_SYSTEM |
-            FORMAT_MESSAGE_IGNORE_INSERTS,
-            NULL,
-            res,
-            MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-            (LPSTR)&buffer,
-            0, NULL);
-        Utilities::setLastError(std::string("OledAwakeApp PostMessage failed - ") + (LPSTR)buffer);
-        LocalFree(buffer);
-        return false;
-    }
-    return true;
-}
-
-
-
-DWORD WINAPI sendMessageToServer(_In_ LPVOID sendInfo)
+unsigned WINAPI sendMessageToServer(void* sendInfo)
 {
     SendServerInfoStruct* info = (SendServerInfoStruct*)sendInfo;
     int iResult;
@@ -331,7 +261,7 @@ DWORD WINAPI sendMessageToServer(_In_ LPVOID sendInfo)
         return 1;
     }
 
-    SOCKET ConnectSocket = INVALID_SOCKET;
+    Object<SOCKET> ConnectSocket;
 
     ptr = result;
 
@@ -346,34 +276,28 @@ DWORD WINAPI sendMessageToServer(_In_ LPVOID sendInfo)
 
     iResult = connect(ConnectSocket, ptr->ai_addr, (int)ptr->ai_addrlen);
     if (iResult == SOCKET_ERROR) {
-        closesocket(ConnectSocket);
         ConnectSocket = INVALID_SOCKET;
     }
 
     freeaddrinfo(result);
 
-    if (ConnectSocket == INVALID_SOCKET) {
+    if (ConnectSocket == INVALID_SOCKET)
         return 1;
-    }
 
     // Send an initial buffer
     iResult = send(ConnectSocket, (char*)&info->req, RemoteInBufferSize, 0);
-    if (iResult == SOCKET_ERROR) {
-        closesocket(ConnectSocket);
+    if (iResult == SOCKET_ERROR)
         return 1;
-    }
 
     // shutdown the connection for sending since no more data will be sent
     // the client can still use the ConnectSocket for receiving data
     iResult = shutdown(ConnectSocket, SD_SEND);
 
-    if (iResult == SOCKET_ERROR) {
-        closesocket(ConnectSocket);
+    if (iResult == SOCKET_ERROR) 
         return 1;
-    }
+
     if (info->req != RemoteRequest::SHUTDOWN_SERVER)
         iResult = recv(ConnectSocket, (char*)info->res, RemoteOutBufferSize, 0);
-
-    closesocket(ConnectSocket);
+    _endthreadex(0);
     return 0;
 }

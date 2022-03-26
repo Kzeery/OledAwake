@@ -20,23 +20,22 @@ constexpr unsigned int RemoteOutBufferSize = sizeof(MonitorState);
 
 class ClientServerRuntime : public Runtime
 {
+    struct CSRToken {};
 public:
-
+    ClientServerRuntime(CSRToken) : LocalIP_(""), OtherIP_(""), State_(MonitorState::MONITOR_ON) {}
+    ClientServerRuntime() = delete;
     MonitorState getOtherMonitorState() const;
     void setCurrentMonitorState(MonitorState);
     MonitorState getCurrentMonitorState();
     bool isDeviceManager() const { return IsDeviceManager_; };
-    bool getTimeSinceLastUserInput(ULONGLONG&) const;
-    bool postWindowsTurnOffDisplayMessage() const;
     void sendMessageToServerTimeout(RemoteRequest, MonitorState*, bool, int) const;
     static Runtime* getInstance(bool);
 private:
-    ClientServerRuntime() : LocalIP_(""), OtherIP_(""), State_(MonitorState::MONITOR_ON) {}
     ~ClientServerRuntime() {};
     bool ensureServerEnvironment();
-    bool initServer(HandleWrapper&) const;
-    bool init();
-    std::unique_ptr<Runtime>& destroy();
+    bool initServer(HANDLE) const;
+    bool init() override;
+    std::unique_ptr<Runtime>& destroy() override;
 private:
 
     std::unique_ptr<std::thread> ServerThread_;
@@ -47,6 +46,9 @@ private:
     static bool InitializedOnce_;
     bool IsDeviceManager_ = false;
 
+
+
+    friend std::unique_ptr<ClientServerRuntime>::deleter_type;
 };
 
 

@@ -1,7 +1,5 @@
 #include "TVCommunicationRuntime.h"
 #include <shlobj_core.h>
-#include <codecvt>
-#include <locale>
 namespace beast = boost::beast;
 namespace http = beast::http;
 namespace websocket = beast::websocket;
@@ -14,7 +12,7 @@ Runtime* TVCommunicationRuntime::getInstance(bool newInstance)
 {
     if (Instance_.get() == nullptr && !InitializedOnce_ && newInstance)
     {
-        Instance_ = std::unique_ptr<Runtime>(new TVCommunicationRuntime);
+        Instance_ = std::make_unique<TVCommunicationRuntime>(TVCommunicationRuntime::TVCToken{});
     }
     InitializedOnce_ = true;
     return Instance_.get();
@@ -22,7 +20,7 @@ Runtime* TVCommunicationRuntime::getInstance(bool newInstance)
 bool TVCommunicationRuntime::init()
 {
     ensureTVMacAddress();
-    LibraryWrapper hDLL = LoadLibrary(L"Shlwapi.dll");
+    Object<HINSTANCE> hDLL = LoadLibrary(L"Shlwapi.dll");
     if (hDLL == NULL)
         SET_ERROR_EXIT("Failed to load Shlwapi.dll", false);
 
@@ -141,7 +139,7 @@ bool TVCommunicationRuntime::turnOnDisplay()
     int BufLen = 102;
 
     sockaddr_in RecvAddr;
-    SOCKET SendSocket = INVALID_SOCKET;
+    Object<SOCKET> SendSocket;
     SendSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (SendSocket == INVALID_SOCKET) {
         Utilities::setLastError("Failed to initialize socket");
@@ -165,13 +163,6 @@ bool TVCommunicationRuntime::turnOnDisplay()
 
     iResult = sendto(SendSocket,
         SendBuf, BufLen, 0, (SOCKADDR*)&RecvAddr, sizeof(RecvAddr));
-    if (iResult == SOCKET_ERROR) {
-        Utilities::setLastError("Failed to send socket");
-        closesocket(SendSocket);
-        return false;
-    }
-
-    iResult = closesocket(SendSocket);
     if (iResult == SOCKET_ERROR) {
         Utilities::setLastError("Failed to send socket");
         return false;
@@ -250,7 +241,7 @@ bool TVCommunicationRuntime::ensureTVMacAddress()
         return false;	//Return 1 on error
     }
     WSASuccessful_ = true;
-    LibraryWrapper hDLL(LoadLibrary(L"iphlpapi.dll"));
+    Object<HINSTANCE> hDLL(LoadLibrary(L"iphlpapi.dll"));
     if (!hDLL)
     {
         Utilities::setLastError("Error loading iphlapi library");

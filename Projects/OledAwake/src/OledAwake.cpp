@@ -16,7 +16,7 @@ SERVICE_STATUS          gSvcStatus;
 SERVICE_STATUS_HANDLE   gSvcStatusHandle;
 
 
-std::wstring mouseDeviceName = L"\\\\?\\HID#VID_046D&PID_C539&MI_01&Col01#b&edd03df&0&0000#{378de44c-56ef-11d1-bc8c-00a0c91405dd}";
+std::wstring mouseDeviceName = L"\\\\?\\HID#VID_046D&PID_C547&MI_00#b&3069e030&0&0000#{378de44c-56ef-11d1-bc8c-00a0c91405dd}";
 
 bool displayTurnedOffByService = false;
 
@@ -174,18 +174,14 @@ VOID SvcInit(DWORD dwArgc, LPTSTR* lpszArgv)
     
     ReportSvcStatus(SERVICE_START_PENDING, NO_ERROR, 0);
     // Initialize pretty much everything in the utilities
-    powerNotifyHandle = RegisterPowerSettingNotification(gSvcStatusHandle, &GUID_CONSOLE_DISPLAY_STATE, DEVICE_NOTIFY_SERVICE_HANDLE);
-    if (!powerNotifyHandle)
-        CLEAN_AND_EXIT(TEXT("RegisterPowerSettingNotification"));
-
+    
     if (RuntimeManager::getClientServerRuntime()->isDeviceManager())
     {
         GUID mouseDeviceGUID = { 0x378de44c, 0x56ef, 0x11d1,
                                  0xbc, 0x8c, 0x00, 0xa0, 0xc9, 
                                  0x14, 0x05, 0xdd };
 
-        DEV_BROADCAST_DEVICEINTERFACE NotificationFilter;
-        ZeroMemory(&NotificationFilter, sizeof(NotificationFilter));
+        DEV_BROADCAST_DEVICEINTERFACE NotificationFilter{ 0 };
         NotificationFilter.dbcc_size = sizeof(DEV_BROADCAST_DEVICEINTERFACE);
         NotificationFilter.dbcc_devicetype = DBT_DEVTYP_DEVICEINTERFACE;
         NotificationFilter.dbcc_classguid = mouseDeviceGUID;
@@ -193,6 +189,10 @@ VOID SvcInit(DWORD dwArgc, LPTSTR* lpszArgv)
         if (deviceNotifyHandle == NULL)
             CLEAN_AND_EXIT(TEXT("RegisterDeviceNotifiaction"));
     }
+
+    powerNotifyHandle = RegisterPowerSettingNotification(gSvcStatusHandle, &GUID_CONSOLE_DISPLAY_STATE, DEVICE_NOTIFY_SERVICE_HANDLE);
+    if (!powerNotifyHandle)
+        CLEAN_AND_EXIT(TEXT("RegisterPowerSettingNotification"));
     // Report running status when initialization is complete.
     ReportSvcStatus(SERVICE_RUNNING, NO_ERROR, 0);
 
@@ -215,30 +215,6 @@ BOOL HandleEvents()
         switch (index - WAIT_OBJECT_0)
         {
         case MONITOR_ON_EVENT_INDEX: // Turn monitor on
-        {
-            ULONGLONG timeSinceLastUserInput = 0;
-            if (clientServerRuntime->getTimeSinceLastUserInput(timeSinceLastUserInput))
-            {
-                if (timeSinceLastUserInput > 90000)
-                {
-                    displayTurnedOffByService = true;
-                    if (clientServerRuntime->postWindowsTurnOffDisplayMessage())
-                    {
-                        std::wstring msg = L"Posted message to windows to turn off display because no user input detected recently.";
-                        SvcReportInfo(msg);
-                    }
-                    else
-                    {
-                        displayTurnedOffByService = false;
-                        SvcReportInfo();
-                    }
-                    break;
-                }
-            }
-            else
-                SvcReportInfo();
-
-
             clientServerRuntime->setCurrentMonitorState(MonitorState::MONITOR_ON);
             for (int i = 0; i < 3; ++i)
             {
@@ -246,7 +222,6 @@ BOOL HandleEvents()
                 std::this_thread::sleep_for(std::chrono::milliseconds(25));
             }
             break;
-        }
         case MONITOR_OFF_EVENT_INDEX: // Turn monitor off
             clientServerRuntime->setCurrentMonitorState(MonitorState::MONITOR_OFF);
             if (clientServerRuntime->getOtherMonitorState() != MonitorState::MONITOR_ON)
@@ -495,10 +470,10 @@ VOID CleanResources()
 {
     RuntimeManager::destroy();
     if (powerNotifyHandle)
-    {
         UnregisterPowerSettingNotification(powerNotifyHandle);
-    }
+
     if (deviceNotifyHandle)
         UnregisterDeviceNotification(deviceNotifyHandle);
+
     ReportSvcStatus(SERVICE_STOPPED, NO_ERROR, 0);
 }

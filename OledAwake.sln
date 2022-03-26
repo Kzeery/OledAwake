@@ -1,20 +1,14 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 16
-VisualStudioVersion = 16.0.32106.194
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.32112.339
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "OledAwake", "Projects\OledAwake\OledAwake.vcxproj", "{828F60E6-FDC1-4C5E-82B1-C0AA5C4F9B6F}"
-	ProjectSection(ProjectDependencies) = postProject
-		{CCCF3A8C-8ADE-4D14-8FE6-F57C2FDABF98} = {CCCF3A8C-8ADE-4D14-8FE6-F57C2FDABF98}
-	EndProjectSection
 EndProject
 Project("{930C7802-8A8C-48F9-8165-68863BCCD9DD}") = "OledAwakeInstall", "Projects\OledAwakeInstall\OledAwakeInstall.wixproj", "{0DD74C39-84F8-4E70-9AAB-4D955978FFF3}"
 	ProjectSection(ProjectDependencies) = postProject
-		{CCCF3A8C-8ADE-4D14-8FE6-F57C2FDABF98} = {CCCF3A8C-8ADE-4D14-8FE6-F57C2FDABF98}
 		{828F60E6-FDC1-4C5E-82B1-C0AA5C4F9B6F} = {828F60E6-FDC1-4C5E-82B1-C0AA5C4F9B6F}
 	EndProjectSection
-EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "OledAwakeApp", "Projects\OledAwakeApp\OledAwakeApp.vcxproj", "{CCCF3A8C-8ADE-4D14-8FE6-F57C2FDABF98}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -30,10 +24,6 @@ Global
 		{0DD74C39-84F8-4E70-9AAB-4D955978FFF3}.Debug|x64.Build.0 = Debug|x64
 		{0DD74C39-84F8-4E70-9AAB-4D955978FFF3}.Release|x64.ActiveCfg = Release|x64
 		{0DD74C39-84F8-4E70-9AAB-4D955978FFF3}.Release|x64.Build.0 = Release|x64
-		{CCCF3A8C-8ADE-4D14-8FE6-F57C2FDABF98}.Debug|x64.ActiveCfg = Debug|x64
-		{CCCF3A8C-8ADE-4D14-8FE6-F57C2FDABF98}.Debug|x64.Build.0 = Debug|x64
-		{CCCF3A8C-8ADE-4D14-8FE6-F57C2FDABF98}.Release|x64.ActiveCfg = Release|x64
-		{CCCF3A8C-8ADE-4D14-8FE6-F57C2FDABF98}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

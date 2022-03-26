@@ -1,12 +1,10 @@
 #include "Utilities.h"
 #include <Windows.h>
-#include <codecvt>
-#include <locale>
 std::string Utilities::LastError_ = "";
-HandleWrapper Utilities::events[eventsSize]{0};
+Object<HANDLE> Utilities::events[eventsSize]{0};
 std::wstring Utilities::getLastError()
 {
-    std::wstring ret = widen(LastError_);
+    std::wstring& ret = widen(LastError_);
     LastError_ = "";
     return ret;
 }
@@ -18,7 +16,16 @@ void Utilities::setLastError(std::string error)
 
 std::wstring Utilities::widen(std::string& str)
 {
-    return std::wstring_convert<std::codecvt_utf8<wchar_t>>().from_bytes(str);
+    int len = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, str.c_str(), (int)str.size(), NULL, 0);
+    if (len == 0)
+        return L"";
+
+    std::wstring out(len, 0);
+
+    if (len != MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, str.c_str(), (int)str.size(), &out[0], (int)out.size()))
+        return L"";
+
+    return out;
 }
 
 
@@ -38,9 +45,3 @@ std::string Utilities::narrow(std::wstring sInput)
 
     return out;
 }
-
-ULONGLONG Utilities::absoluteDiff(const ULONGLONG& a, const ULONGLONG& b)
-{
-    return a > b ? a - b : b - a;
-}
-

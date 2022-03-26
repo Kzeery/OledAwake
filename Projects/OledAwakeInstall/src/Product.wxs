@@ -2,7 +2,7 @@
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"
 	 xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
 	<?include "Includes.wxi"?>
-	<Product Id="*" Name="OledAwake" Language="1033" Version="2.3.2" Manufacturer="Kzeery" UpgradeCode="d02d649b-bb89-4923-a2b5-46e6d5084956">
+	<Product Id="*" Name="OledAwake" Language="1033" Version="2.4.0" Manufacturer="Kzeery" UpgradeCode="d02d649b-bb89-4923-a2b5-46e6d5084956">
 		<Package InstallerVersion="300" Compressed="yes" InstallScope="perMachine" InstallPrivileges="elevated" Platform="x64"/>
 		<MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
 		<MediaTemplate EmbedCab="yes" />
@@ -21,16 +21,11 @@
 			<Component Id="Installbins" Guid="{DEDE58B2-D01E-41BF-AAEC-A6DF581E84ED}">
 				
 				<File Id="OledAwakeEXE" Name="OledAwake.exe" DiskId="1" Source ="$(var.SourceDir)\OledAwake.exe" KeyPath="yes"/>
-				<File Id="OledAwakeApp" Name="OledAwakeApp.exe" Source = "$(var.SourceDir)\OledAwakeApp.exe"/>
 				<File Source ="$(var.SourceDir)\ErrorMessages.dll" />
 				
 				<RegistryKey Root="HKLM" Key="SYSTEM\CurrentControlSet\Services\EventLog\Application\OledAwake">
 					<RegistryValue Type="integer" Name="TypesSupported" Value="7" />
 					<RegistryValue Type="string" Name="EventMessageFile" Value="[Bins]ErrorMessages.dll" />
-				</RegistryKey>
-				
-				<RegistryKey Root="HKLM" Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run">
-					<RegistryValue Type="string" Name="OledAwakeApp" Value="[Bins]OledAwakeApp.exe" />
 				</RegistryKey>
 				
 				<ServiceInstall
@@ -46,38 +41,10 @@
 				
 			</Component>
 		</DirectoryRef>
-		
-		
-		<CustomAction Id="StartOledAwakeApp"
-					  FileKey="OledAwakeApp"
-					  ExeCommand=""
-					  Execute="deferred"
-					  Return="asyncNoWait"
-					  Impersonate="no"/>
-
-		<InstallExecuteSequence>
-			<Custom Action='StartOledAwakeApp' Before='InstallFinalize' >NOT Installed</Custom>
-		</InstallExecuteSequence>
-
-
-		<CustomAction Id="KillOledAwakeApp"
-					  FileKey="OledAwakeApp"
-					  ExeCommand="EXIT"
-					  Execute="deferred"
-					  Return="ignore"
-					  Impersonate="no"/>
-
-		<InstallExecuteSequence>
-			<Custom Action='KillOledAwakeApp' After='InstallInitialize' />
-		</InstallExecuteSequence>
-
-
 
 		<Feature Id="ProductFeature" Title="OledAwake" Level="1">
 			<ComponentRef Id="Installbins"/>
 		</Feature>
-
-		<util:CloseApplication Id="CloseOledAwakeApp" Target="OledAwakeApp.exe" CloseMessage="no" RebootPrompt="no">REMOVE = "ALL"</util:CloseApplication>
 
 	</Product>
 
